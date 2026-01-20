@@ -1,8 +1,4 @@
-﻿param (
-    [string]$OutputPath="output\parsed-chat.txt"
-)
-
-$logDirectory = Join-Path $env:USERPROFILE "AppData\LocalLow\Elder Game\Project Gorgon\ChatLogs"
+﻿$logDirectory = Join-Path $env:USERPROFILE "AppData\LocalLow\Elder Game\Project Gorgon\ChatLogs"
 $logFiles = Get-ChildItem -Path $logDirectory -File
 
 $chatResults = foreach ($logPath in $logFiles)
