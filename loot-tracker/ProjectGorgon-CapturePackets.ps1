@@ -25,7 +25,7 @@ Write-Host "Starting TShark Capture..." -ForegroundColor Cyan
 Write-Host "Saving raw data to: $rawPcap" -ForegroundColor DarkGray
 
 $captureArgs = @("-i", $InterfaceId, "-w", $rawPcap)
-$tsharkProcess = Start-Process -FilePath $TSharkPath -ArgumentList $captureArgs -PassThru
+$tsharkProcess = Start-Process -FilePath $TSharkPath -ArgumentList $captureArgs -PassThru -NoNewWindow
 
 Write-Host "`n[ RECORDING IN PROGRESS ]" -ForegroundColor Green -BackgroundColor Black
 Write-Host "Press ANY KEY to Stop capturing and convert to JSON..." -ForegroundColor Yellow
