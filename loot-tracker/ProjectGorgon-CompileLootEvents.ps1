@@ -12,7 +12,7 @@ $itemResults = Get-Content $ItemInputPath -Raw | ConvertFrom-Json
 $eventResults = Get-Content $EventInputPath -Raw | ConvertFrom-Json
 $sessionResults = Get-Content $SessionInputPath -Raw | ConvertFrom-Json
 
-$BufferSeconds = 5
+$BufferSeconds = 10
 $SessionTimeout = 3
 # If an item drops less than this many seconds before a State Change packet,
 # we consider it part of that action (e.g. Skinning).
@@ -94,7 +94,7 @@ foreach ($event in $timeline) {
                 $thisActivity = "Butchering"
             }
             
-            if ($currentMonsterName) {
+            if ($currentMonsterName -and $lag -le $BufferSeconds) {
                 $origin = $currentMonsterName
                 $status = "Linked"
                 $id = $encounterID
