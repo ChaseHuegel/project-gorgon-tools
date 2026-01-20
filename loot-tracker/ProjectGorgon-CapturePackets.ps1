@@ -1,7 +1,7 @@
 ﻿param (
-    [string]$TSharkPath = "tshark.exe"
-    [string]$OutputFolder = "output\captures\"
-    [string]$InterfaceId = 4  # Run with -ListInterfaces to find this
+    [string]$TSharkPath = "tshark.exe",
+    [string]$OutputFolder = "output\captures\",
+    [string]$InterfaceId = 4,  # Run with -ListInterfaces to find this
     [string]$DisplayFilter = "tcp.payload contains 53:65:61:72:63:68:20:43:6f:72:70:73:65:20:6f:66:20" # "Search Corpse of "
 )
 
