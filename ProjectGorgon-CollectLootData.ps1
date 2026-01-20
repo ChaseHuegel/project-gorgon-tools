@@ -59,7 +59,7 @@ Write-Host "Correlating loot and events to a loot table..." -ForegroundColor Cya
 
 $correlatedLoot = & $BuildTableScript
 
-$exportData = $correlatedLoot | Select-Object Time, Source, ID, Activity, Item, Amount, Status
+$exportData = $correlatedLoot | Select-Object
 $exportData | Export-Csv $OutputPath -NoTypeInformation -Encoding UTF8
 
 if (Test-Path $OutputPath) {

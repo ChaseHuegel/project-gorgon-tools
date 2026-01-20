@@ -19,18 +19,32 @@ $eventResults = Get-Content $EventInputPath -Raw | ConvertFrom-Json
 $BufferSeconds   = 5
 $SessionTimeout  = 3
 
-$sources = $eventResults | Select-Object @{N='Time';E={ [DateTime]$_.Time }},
-                                         @{N='Data';E={$_.Monster}},
-                                         @{N='HasSkin';E={$_.CanSkin}},
-                                         @{N='HasButcher';E={$_.CanButcher}},
-                                         @{N='EventType';E={'Source'}},
-                                         @{N='SortPriority';E={1}}
+$ParseDate = {
+    param($dateInput)
+    # STRICT Regex: Only match if it looks exactly like /Date(12345)/
+    # This prevents matching "2026" in a standard date string
+    if ($dateInput -match '^\/Date\((\-?\d+)\)\/$') {
+        $ms = [long]$matches[1]
+        return ([DateTime]'1970-01-01 00:00:00').AddMilliseconds($ms).ToLocalTime()
+    }
+    else {
+        # Fallback: Let .NET attempt to parse standard strings (ISO 8601, etc)
+        return [DateTime]$dateInput
+    }
+}
 
-$drops   = $itemResults   | Select-Object @{N='Time';E={ [DateTime]$_.Time }},
-                                         @{N='Data';E={$_.ItemName}},
-                                         @{N='Amount';E={$_.Amount}},
-                                         @{N='EventType';E={'Loot'}},
-                                         @{N='SortPriority';E={2}}
+$sources = $eventResults | Select-Object @{N='Time';E={ & $ParseDate $_.Time }},
+                                        @{N='Data';E={$_.Monster}},
+                                        @{N='HasSkin';E={$_.CanSkin}},
+                                        @{N='HasButcher';E={$_.CanButcher}},
+                                        @{N='EventType';E={'Source'}},
+                                        @{N='SortPriority';E={1}}
+
+$drops   = $itemResults   | Select-Object @{N='Time';E={ & $ParseDate $_.Time }},
+                                        @{N='Data';E={$_.ItemName}},
+                                        @{N='Amount';E={$_.Amount}},
+                                        @{N='EventType';E={'Loot'}},
+                                        @{N='SortPriority';E={2}}
 
 # 2. Merge and Sort
 $timeline = @($sources) + @($drops) | Sort-Object Time, SortPriority
@@ -64,6 +78,9 @@ foreach ($event in $timeline) {
             $lastButcherFlag = $event.HasButcher
         } else {
             # SAME MONSTER
+            if ($event.HasSkin -or $event.HasButcher) {
+                $currentActivity = "Looting"
+            }
             
             if ($lastSkinFlag -and -not $event.HasSkin) {
                 $currentActivity = "Skinning"
@@ -98,6 +115,7 @@ foreach ($event in $timeline) {
             Item     = $event.Data
             Amount   = $event.Amount
             Status   = $status
+            Diff     = $timeDiff
         }
     }
 }
