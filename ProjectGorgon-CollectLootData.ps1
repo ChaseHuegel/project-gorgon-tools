@@ -70,4 +70,4 @@ if (Test-Path $OutputPath) {
     return
 }
 
-$exportData | Out-GridView -Title "Loot Table Results"
+$exportData | Out-GridView -Title "Loot Table Results" -Wait

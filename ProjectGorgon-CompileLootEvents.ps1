@@ -102,12 +102,12 @@ foreach ($event in $timeline) {
     }
 }
 
-$correlatedLoot | Where-Object { $_.Status -eq 'Linked' } |
+$summary = $correlatedLoot | Where-Object { $_.Status -eq 'Linked' } |
     Group-Object ID, Activity |
     Sort-Object {$_.Group[0].Time} |
     Select-Object @{N='Monster';E={$_.Group[0].Source}},
                   @{N='Action';E={$_.Values[1]}},
                   @{N='Items';E={ ($_.Group | ForEach-Object { "$($_.Amount)x $($_.Item)" }) -join ', ' }} |
-    Format-Table -AutoSize
+    Format-Table -AutoSize | Out-String
 
 return $correlatedLoot
