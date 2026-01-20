@@ -1,23 +1,39 @@
-﻿# --- CONFIGURATION ---
+﻿param (
+    [string]$ItemInputPath="output\parsed-chat.txt",
+    [string]$EventInputPath="output\parsed-packets.txt"
+)
+
+if ((Test-Path $ItemInputPath) -eq $False) {
+    Write-Error "Items file not found: $ItemInputPath";
+    return
+}
+
+if ((Test-Path $EventInputPath) -eq $False) {
+    Write-Error "Events file not found: $EventInputPath";
+    return
+}
+
+$itemResults  = Get-Content $ItemInputPath -Raw | ConvertFrom-Json
+$eventResults = Get-Content $EventInputPath -Raw | ConvertFrom-Json
+
 $BufferSeconds   = 5
 $SessionTimeout  = 3
 
-# 1. Standardize Inputs
-$sources = $packetResults | Select-Object @{N='Time';E={ [DateTime]::new($_.Time.Year, $_.Time.Month, $_.Time.Day, $_.Time.Hour, $_.Time.Minute, $_.Time.Second) }}, 
-                                          @{N='Data';E={$_.Monster}},
-                                          @{N='HasSkin';E={$_.CanSkin}},
-                                          @{N='HasButcher';E={$_.CanButcher}},
-                                          @{N='EventType';E={'Source'}},
-                                          @{N='SortPriority';E={1}} 
+$sources = $eventResults | Select-Object @{N='Time';E={ [DateTime]$_.Time }},
+                                         @{N='Data';E={$_.Monster}},
+                                         @{N='HasSkin';E={$_.CanSkin}},
+                                         @{N='HasButcher';E={$_.CanButcher}},
+                                         @{N='EventType';E={'Source'}},
+                                         @{N='SortPriority';E={1}}
 
-$drops   = $chatResults   | Select-Object @{N='Time';E={$_.Time}}, 
-                                          @{N='Data';E={$_.ItemName}}, 
-                                          @{N='Amount';E={$_.Amount}}, 
-                                          @{N='EventType';E={'Loot'}},
-                                          @{N='SortPriority';E={2}}
+$drops   = $itemResults   | Select-Object @{N='Time';E={ [DateTime]$_.Time }},
+                                         @{N='Data';E={$_.ItemName}},
+                                         @{N='Amount';E={$_.Amount}},
+                                         @{N='EventType';E={'Loot'}},
+                                         @{N='SortPriority';E={2}}
 
 # 2. Merge and Sort
-$timeline = $sources + $drops | Sort-Object Time, SortPriority
+$timeline = @($sources) + @($drops) | Sort-Object Time, SortPriority
 
 # 3. State Machine Variables
 $correlatedLoot = @()
@@ -28,53 +44,45 @@ $currentMonsterName = $null
 $lastPacketTime = [DateTime]::MinValue
 
 # State Tracking
-$currentActivity = "Looting" # Default state
+$currentActivity = "Looting"
 $lastSkinFlag = $false
 $lastButcherFlag = $false
 
 foreach ($event in $timeline) {
-    
     if ($event.EventType -eq 'Source') {
         
-        # --- SESSION IDENTIFICATION ---
         $timeSinceLast = ($event.Time - $lastPacketTime).TotalSeconds
         $isSameEncounter = ($event.Data -eq $currentMonsterName -and $timeSinceLast -le $SessionTimeout)
         
         if (-not $isSameEncounter) {
-            # NEW MONSTER: Reset everything
+            # NEW MONSTER
             $encounterID++
             $currentMonsterName = $event.Data
             $currentActivity = "Looting" # Reset to standard looting
             
-            # Initialize flags from this FIRST packet
             $lastSkinFlag = $event.HasSkin
             $lastButcherFlag = $event.HasButcher
         } else {
-            # SAME MONSTER: Check for State Changes (Transitions)
+            # SAME MONSTER
             
-            # Detect Skinning: Option WAS present, NOW matches false
             if ($lastSkinFlag -and -not $event.HasSkin) {
                 $currentActivity = "Skinning"
             }
 
-            # Detect Butchering: Option WAS present, NOW matches false
             elseif ($lastButcherFlag -and -not $event.HasButcher) {
                 $currentActivity = "Butchering"
             }
             
-            # Update flags for the next loop
             $lastSkinFlag = $event.HasSkin
             $lastButcherFlag = $event.HasButcher
         }
 
         $lastPacketTime = $event.Time
-    }
-    elseif ($event.EventType -eq 'Loot') {
-        
+    } elseif ($event.EventType -eq 'Loot') {
         $timeDiff = ($event.Time - $lastPacketTime).TotalSeconds
 
         if ($currentMonsterName -and ($timeDiff -ge 0) -and ($timeDiff -le $BufferSeconds)) {
-            $origin = "$currentMonsterName"
+            $origin = $currentMonsterName
             $status = "Linked"
         }
         else {
@@ -94,10 +102,12 @@ foreach ($event in $timeline) {
     }
 }
 
-$correlatedLoot | Where-Object { $_.Status -eq 'Linked' } | 
-    Group-Object Source | 
-    Select-Object Name, Count, @{N='Items';E={$_.Group.Item -join ', '}} | 
+$correlatedLoot | Where-Object { $_.Status -eq 'Linked' } |
+    Group-Object ID, Activity |
+    Sort-Object {$_.Group[0].Time} |
+    Select-Object @{N='Monster';E={$_.Group[0].Source}},
+                  @{N='Action';E={$_.Values[1]}},
+                  @{N='Items';E={ ($_.Group | ForEach-Object { "$($_.Amount)x $($_.Item)" }) -join ', ' }} |
     Format-Table -AutoSize
 
-$correlatedLoot | Out-GridView -Title "Final Drop Table"
-$correlatedLoot | Export-Csv "D:\Downloads\FinalLootTable.csv" -NoTypeInformation
+return $correlatedLoot
