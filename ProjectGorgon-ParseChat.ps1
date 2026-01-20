@@ -1,7 +1,7 @@
 ﻿$logDirectory = Join-Path $env:USERPROFILE "AppData\LocalLow\Elder Game\Project Gorgon\ChatLogs"
 $logFiles = Get-ChildItem -Path $logDirectory -File
 
-$chatResults = foreach ($logPath in $logFiles)
+foreach ($logPath in $logFiles)
 {
     $logData = Get-Content $logPath.FullName
 
@@ -30,5 +30,3 @@ $chatResults = foreach ($logPath in $logFiles)
         }
     }
 }
-
-Set-Content -Path $OutputPath -Value $chatResults
