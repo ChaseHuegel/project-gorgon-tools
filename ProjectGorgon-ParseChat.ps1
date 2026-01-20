@@ -35,6 +35,4 @@ $chatResults = foreach ($logPath in $logFiles)
     }
 }
 
-Write-Host "Found $( $chatResults.Count ) total items." -ForegroundColor Green
-
 Set-Content -Path $OutputPath -Value $chatResults
