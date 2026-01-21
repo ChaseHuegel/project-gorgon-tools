@@ -65,7 +65,7 @@ $timeline = @($sources) + @($drops) | Sort-Object Time, SortPriority
 $correlatedLoot = @()
 $pendingDrops = @()
 
-$encounterID = 0
+$encounterID = New-Guid
 $currentMonsterName = $null
 $lastPacketTime = [DateTime]::MinValue
 
@@ -101,7 +101,7 @@ foreach ($event in $timeline) {
             } else {
                 $origin = "Ground/Unknown"
                 $status = "Orphaned"
-                $id = 0
+                $id = New-Guid
             }
 
             $correlatedLoot += [PSCustomObject]@{
@@ -119,7 +119,7 @@ foreach ($event in $timeline) {
         $pendingDrops = @()
 
         if (-not $isSameEncounter) {
-            $encounterID++
+            $encounterID = New-Guid
             $currentMonsterName = $event.Data
         }
 
