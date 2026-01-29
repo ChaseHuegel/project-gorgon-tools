@@ -33,6 +33,7 @@ $sources = $eventResults | Select-Object @{N='Time';E={ & $ParseDate $_.Time }},
                                         @{N='Data';E={$_.Monster}},
                                         @{N='HasSkin';E={$_.CanSkin}},
                                         @{N='HasButcher';E={$_.CanButcher}},
+                                        @{N='HasExtract';E={$_.CanExtract}},
                                         @{N='EventType';E={'Source'}},
                                         @{N='SortPriority';E={2}}
 
@@ -71,6 +72,7 @@ $lastPacketTime = [DateTime]::MinValue
 
 $lastSkinFlag = $false
 $lastButcherFlag = $false
+$lastExtractFlag = $false
 
 foreach ($event in $timeline) {
 
@@ -82,6 +84,7 @@ foreach ($event in $timeline) {
         
         $justSkinned = ($isSameEncounter -and $lastSkinFlag -and -not $event.HasSkin)
         $justButchered = ($isSameEncounter -and $lastButcherFlag -and -not $event.HasButcher)
+        $justExtracted = ($isSameEncounter -and $lastExtractFlag -and -not $event.HasExtract)
 
         foreach ($drop in $pendingDrops) {
 
@@ -92,6 +95,8 @@ foreach ($event in $timeline) {
                 $thisActivity = "Skinning"
             } elseif ($justButchered -and $lag -le $RetroactiveThreshold) {
                 $thisActivity = "Butchering"
+            } elseif ($justExtracted -and $lag -le $RetroactiveThreshold) {
+                $thisActivity = "Extracting"
             }
             
             if ($currentMonsterName -and $lag -le $BufferSeconds) {
@@ -125,6 +130,7 @@ foreach ($event in $timeline) {
 
         $lastSkinFlag = $event.HasSkin
         $lastButcherFlag = $event.HasButcher
+        $lastExtractFlag = $event.HasExtract
         $lastPacketTime = $event.Time
     }
 }

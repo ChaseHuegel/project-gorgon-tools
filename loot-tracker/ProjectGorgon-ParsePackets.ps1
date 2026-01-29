@@ -48,10 +48,21 @@ foreach ($captureFilePath in $captureFiles)
         $cleanAscii = -join ($bytes | Where-Object { ($_ -ge 32 -and $_ -le 126) -or $_ -eq 10 -or $_ -eq 13 })
 
         if ($cleanAscii -match 'Search Corpse of (?<name>[^\r\n]*)') {
+            if ($cleanAscii -match 'You do not have permission to loot this corpse.') {
+                continue
+            }
 
-            $monsterName = $Matches['name'].Trim()
+            $monsterName = $Matches['name'];
+            $monsterName = $monsterName.Replace("Autopsy", "");
+            $monsterName = $monsterName.Replace("Skin Corpse", "");
+            $monsterName = $monsterName.Replace("Butcher Corpse", "");
+            $monsterName = $monsterName.Replace("Extract Skull", "");
+            $monsterName = $monsterName.Replace("Bury Corpse", "");
+            $monsterName = $monsterName.Trim()
+
             $canSkin     = $rawString -match "Skin Corpse"
             $canButcher  = $rawString -match "Butcher Corpse"
+            $canExtract  = $rawString -match "Extract Skull"
             $time        = Parse-WiresharkTime $layers.frame.'frame.time'
 
             $allEvents += [PSCustomObject]@{
@@ -59,6 +70,7 @@ foreach ($captureFilePath in $captureFiles)
                 Monster    = $monsterName
                 CanSkin    = $canSkin
                 CanButcher = $canButcher
+                CanExtract = $canExtract
             }
         }
     }
