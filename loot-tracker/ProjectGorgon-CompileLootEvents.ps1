@@ -1,16 +1,19 @@
 ﻿param (
     [string]$ItemInputPath="output\parsed-chat.txt",
     [string]$EventInputPath="output\parsed-packets.txt",
-    [string]$SessionInputPath="output\parsed-sessions.txt"
+    [string]$SessionInputPath="output\parsed-sessions.txt",
+    [string]$ZoneInputPath="output\zones.csv"
 )
 
 if (-not (Test-Path $ItemInputPath))  { Write-Error "Items file not found"; return }
 if (-not (Test-Path $EventInputPath)) { Write-Error "Events file not found"; return }
 if (-not (Test-Path $SessionInputPath)) { Write-Error "Session file not found"; return }
+if (-not (Test-Path $ZoneInputPath)) { Write-Error "Zones file not found"; return }
 
 $itemResults = Get-Content $ItemInputPath -Raw | ConvertFrom-Json
 $eventResults = Get-Content $EventInputPath -Raw | ConvertFrom-Json
 $sessionResults = Get-Content $SessionInputPath -Raw | ConvertFrom-Json
+$zoneResults = Import-Csv $ZoneInputPath
 
 $BufferSeconds = 10
 $SessionTimeout = 3
@@ -45,6 +48,8 @@ $drops = $itemResults | Select-Object @{N='Time';E={ & $ParseDate $_.Time }},
 
 $validSessions = $sessionResults | Select-Object @{N='Start';E={[DateTime]$_.Start}},
                                                 @{N='End';E={[DateTime]$_.End}}
+
+$zoneResults = $zoneResults | Select-Object @{N='Time';E={[DateTime]$_.Time}}, Zone | Sort-Object Time
 
 # Filter out drops that do not fall within a session
 $drops = $drops | Where-Object {
@@ -148,10 +153,25 @@ foreach ($drop in $pendingDrops) {
     }
 }
 
+$correlatedLoot = $correlatedLoot | Sort-Object Time
+
+$zoneIndex = 0
+$currentZoneName = "Unknown"
+foreach ($lootEvent in $correlatedLoot) {
+    while ($zoneIndex -lt $zoneResults.Count -and $zoneResults[$zoneIndex].Time -le $lootEvent.Time) {
+        $currentZoneName = $zoneResults[$zoneIndex].Zone
+        $zoneIndex++
+    }
+
+    # Add the Zone to the object
+    $lootEvent | Add-Member -NotePropertyName "Zone" -NotePropertyValue $currentZoneName
+}
+
 $summary = $correlatedLoot | Where-Object { $_.Status -eq 'Linked' } |
     Group-Object ID, Activity |
-    Sort-Object {$_.Group[0].Time} |
-    Select-Object @{N='Monster';E={$_.Group[0].Source}},
+    Sort-Object {$_.Group[0].Zone}, {$_.Group[0].Time} |
+    Select-Object @{N='Zone';E={$_.Group[0].Zone}},
+                  @{N='Monster';E={$_.Group[0].Source}},
                   @{N='Action';E={$_.Values[1]}},
                   @{N='Items';E={ ($_.Group | ForEach-Object { "$($_.Amount)x $($_.Item)" }) -join ', ' }} |
     Format-Table -AutoSize | Out-String
