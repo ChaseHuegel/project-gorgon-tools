@@ -5,8 +5,8 @@ param (
 
 Write-Host "Starting background scripts..." -ForegroundColor Cyan
 
-$proc1 = Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$CapturePacketsScriptPath`"" -PassThru -WindowStyle Minimized
-$proc2 = Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$CaptureZonesScriptPath`"" -PassThru -WindowStyle Minimized
+$proc1 = Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$CapturePacketsScriptPath`"" -PassThru -NoNewWindow
+$proc2 = Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$CaptureZonesScriptPath`"" -PassThru -NoNewWindow
 
 Write-Host "Scripts are running (PIDs: $($proc1.Id), $($proc2.Id))." -ForegroundColor Green
 Write-Host "Press ANY KEY to stop both scripts and exit..." -ForegroundColor Yellow
