@@ -27,7 +27,7 @@ Write-Host "Press ANY KEY to Stop capturing..." -ForegroundColor Yellow
 
 $lastText = $null
 while ($true) {
-    $date = [DateTime]::Now
+    $date = [DateTime]::UtcNow
 
     # Capture the screen
     $bitmap = New-Object System.Drawing.Bitmap $width, $height
