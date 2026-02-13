@@ -1,6 +1,8 @@
 ﻿param (
     [string]$InputPath="output\captures\",
-    [string]$SessionOutputPath="output\parsed-sessions.txt"
+    [string]$SessionOutputPath="output\parsed-sessions.txt",
+    [string]$TSharkPath = "tshark.exe",
+    [string]$DisplayFilter = "tcp.payload contains 53:65:61:72:63:68:20:43:6f:72:70:73:65:20:6f:66:20" # "Search Corpse of "
 )
 
 function Parse-WiresharkTime {
@@ -13,6 +15,15 @@ function Parse-WiresharkTime {
         [System.Globalization.CultureInfo]::InvariantCulture,
         [System.Globalization.DateTimeStyles]::AssumeLocal
     )
+}
+
+$packetFiles = Get-ChildItem -Path $InputPath -File -Filter "*.pcapng"
+foreach ($packetFile in $packetFiles)
+{
+    $rawPcap = $packetFile.FullName
+    $jsonFile = $rawPcap.Replace(".pcapng", ".json");
+    $convertCmd = "& `"$TSharkPath`" -r `"$rawPcap`" -2 -Y `"$DisplayFilter`" -T json | Out-File `"$jsonFile`" -Encoding ASCII"
+    Invoke-Expression $convertCmd
 }
 
 $captureFiles = Get-ChildItem -Path $InputPath -File -Filter "*.json"
