@@ -86,7 +86,7 @@ $validSessions = $sessionResults | Select-Object @{N='Start';E={[DateTime]$_.Sta
                                                 @{N='End';E={[DateTime]$_.End}}
 
 $zoneResults = $zoneResults | Select-Object @{N='Time';E={[DateTime]$_.Time}}, Text | Sort-Object Time
-$targetResults = $targetResults | Select-Object @{N='Time';E={[DateTime]$_.Time}}, Text | Sort-Object Time
+$targetResults = $targetResults | Select-Object @{N='Time';E={[DateTime]$_.Time}}, @{N='Text';E={($_.Text -replace '[^a-zA-Z\s]').Trim()}} | Sort-Object Time
 
 # Filter out drops that do not fall within a session
 $lootEvents = $lootEvents | Where-Object {
