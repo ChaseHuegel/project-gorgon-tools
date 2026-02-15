@@ -76,7 +76,7 @@ while ($true) {
         if ($currentText -ne $lastText) {
             # Text changed
             $newRecord = [PSCustomObject]@{
-                Time = $date.ToString("yyyy-MM-dd HH:mm:ss")
+                Time = $date.ToString("yyyy-MM-dd HH:mm:ss.fff")
                 Text = $currentText
             }
 
@@ -87,11 +87,11 @@ while ($true) {
             Write-Host "[$($newRecord.Time)] New Text Detected: '$($newRecord.Text)'" -ForegroundColor Green
         } else {
             # Text hasn't changed
-            Write-Host "[$($date.ToString("HH:mm:ss"))] Duplicate: '$currentText' - Skipped" -ForegroundColor Gray
+            Write-Host "[$($date.ToString("HH:mm:ss.fff"))] Duplicate: '$currentText' - Skipped" -ForegroundColor Gray
         }
     } else {
         # No text text found
-        Write-Host "[$($date.ToString("HH:mm:ss"))] Read: <EMPTY> - Skipped" -ForegroundColor DarkGray
+        Write-Host "[$($date.ToString("HH:mm:ss.fff"))] Read: <EMPTY> - Skipped" -ForegroundColor DarkGray
     }
 
     # Wait to stop else continue to the next capture

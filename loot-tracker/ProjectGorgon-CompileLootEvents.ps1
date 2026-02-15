@@ -60,7 +60,7 @@ $ParseDate = {
         return ([DateTime]'1970-01-01 00:00:00').AddMilliseconds($ms).ToLocalTime()
     }
     else {
-        return [DateTime]$dateInput
+        return [DateTime]::ParseExact($dateInput, "yyyy-MM-dd HH:mm:ss.fff", $null)
     }
 }
 
@@ -85,8 +85,8 @@ $buryEvents = $itemResults | Where-Object { $_.EventType -eq 'Bury' } | Select-O
 $validSessions = $sessionResults | Select-Object @{N='Start';E={[DateTime]$_.Start}},
                                                 @{N='End';E={[DateTime]$_.End}}
 
-$zoneResults = $zoneResults | Select-Object @{N='Time';E={[DateTime]$_.Time}}, Text | Sort-Object Time
-$targetResults = $targetResults | Select-Object @{N='Time';E={[DateTime]$_.Time}}, Text | Sort-Object Time
+$zoneResults = $zoneResults | Select-Object @{N='Time';E={[DateTime]::ParseExact($_.Time, "yyyy-MM-dd HH:mm:ss.fff", $null)}}, Text | Sort-Object Time
+$targetResults = $targetResults | Select-Object @{N='Time';E={[DateTime]::ParseExact($_.Time, "yyyy-MM-dd HH:mm:ss.fff", $null)}}, @{N='Text';E={($_.Text -replace '[^a-zA-Z\s]').Trim()}} | Sort-Object Time
 
 # Filter out drops that do not fall within a session
 $lootEvents = $lootEvents | Where-Object {
