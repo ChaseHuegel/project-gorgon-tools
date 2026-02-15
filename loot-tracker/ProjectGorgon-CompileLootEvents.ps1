@@ -53,7 +53,7 @@ $buryEvents = $itemResults | Where-Object { $_.EventType -eq 'Bury' } | Select-O
 $validSessions = $sessionResults | Select-Object @{N='Start';E={[DateTime]$_.Start}},
                                                 @{N='End';E={[DateTime]$_.End}}
 
-$zoneResults = $zoneResults | Select-Object @{N='Time';E={[DateTime]$_.Time}}, Zone | Sort-Object Time
+$zoneResults = $zoneResults | Select-Object @{N='Time';E={[DateTime]$_.Time}}, Text | Sort-Object Time
 
 # Filter out drops that do not fall within a session
 $lootEvents = $lootEvents | Where-Object {
@@ -199,7 +199,7 @@ $zoneIndex = 0
 $currentZoneName = "Unknown"
 foreach ($lootEvent in $correlatedLoot) {
     while ($zoneIndex -lt $zoneResults.Count -and $zoneResults[$zoneIndex].Time -le $lootEvent.Time) {
-        $currentZoneName = $zoneResults[$zoneIndex].Zone
+        $currentZoneName = $zoneResults[$zoneIndex].Text
         $zoneIndex++
     }
 
