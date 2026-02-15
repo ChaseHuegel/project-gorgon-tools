@@ -13,7 +13,6 @@ foreach ($logPath in $logFiles)
         # 4. Optional Capture Count (x followed by digits)
         # 5. End with "added to inventory."
         if ($line -match '^(?<timestamp>[\d-]+\s+[\d:]+)\s+\[Status\]\s+(?<item>.+?)(?:\s+x(?<count>\d+))?\s+added to inventory\.$') {
-
             $count = if ($Matches['count']) { [int]$Matches['count'] } else { 1 }
 
             $date = [DateTime]::ParseExact(
@@ -24,8 +23,20 @@ foreach ($logPath in $logFiles)
 
             [PSCustomObject]@{
                 Time     = $date
+                EventType = "Loot"
                 ItemName = $Matches['item'].Trim()
                 Amount   = $count
+            }
+        } elseif ($line -match '^(?<timestamp>[\d-]+\s+[\d:]+)\s+\[Status\]\s+You bury the corpse\.$') {
+            $date = [DateTime]::ParseExact(
+                $Matches['timestamp'].Trim(),
+                "yy-MM-dd HH:mm:ss",
+                [System.Globalization.CultureInfo]::InvariantCulture
+            )
+
+            [PSCustomObject]@{
+                Time = $date
+                EventType = "Bury"
             }
         }
     }
