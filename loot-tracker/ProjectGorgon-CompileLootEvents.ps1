@@ -40,11 +40,15 @@ $sources = $eventResults | Select-Object @{N='Time';E={ & $ParseDate $_.Time }},
                                         @{N='EventType';E={'Source'}},
                                         @{N='SortPriority';E={2}}
 
-$drops = $itemResults | Select-Object @{N='Time';E={ & $ParseDate $_.Time }},
-                                        @{N='Data';E={$_.ItemName}},
-                                        @{N='Amount';E={$_.Amount}},
-                                        @{N='EventType';E={'Loot'}},
-                                        @{N='SortPriority';E={1}}
+$lootEvents = $itemResults | Where-Object { $_.EventType -eq 'Loot' } | Select-Object @{N='Time';E={ & $ParseDate $_.Time }},
+                                                                            @{N='Data';E={$_.ItemName}},
+                                                                            @{N='Amount';E={$_.Amount}},
+                                                                            @{N='EventType';E={'Loot'}},
+                                                                            @{N='SortPriority';E={1}}
+
+$buryEvents = $itemResults | Where-Object { $_.EventType -eq 'Bury' } | Select-Object @{N='Time';E={ & $ParseDate $_.Time }},
+                                                                            @{N='EventType';E={'Bury'}},
+                                                                            @{N='SortPriority';E={2}}
 
 $validSessions = $sessionResults | Select-Object @{N='Start';E={[DateTime]$_.Start}},
                                                 @{N='End';E={[DateTime]$_.End}}
@@ -52,7 +56,7 @@ $validSessions = $sessionResults | Select-Object @{N='Start';E={[DateTime]$_.Sta
 $zoneResults = $zoneResults | Select-Object @{N='Time';E={[DateTime]$_.Time}}, Zone | Sort-Object Time
 
 # Filter out drops that do not fall within a session
-$drops = $drops | Where-Object {
+$lootEvents = $lootEvents | Where-Object {
     $dropTime = $_.Time
     $isValid = $false
 
@@ -66,7 +70,7 @@ $drops = $drops | Where-Object {
     return $isValid
 }
 
-$timeline = @($sources) + @($drops) | Sort-Object Time, SortPriority
+$timeline = @($sources) + @($lootEvents) + @($buryEvents) | Sort-Object Time, SortPriority
 
 $correlatedLoot = @()
 $pendingDrops = @()
@@ -83,6 +87,42 @@ foreach ($event in $timeline) {
 
     if ($event.EventType -eq 'Loot') {
         $pendingDrops += $event
+    } elseif ($event.EventType -eq 'Bury') {
+        # A bury event indicates the end of an encounter.
+        # Process any pending drops and associate them with the last known monster.
+        foreach ($drop in $pendingDrops) {
+            $lag = ($event.Time - $drop.Time).TotalSeconds
+
+            if ($currentMonsterName -and $lag -le $BufferSeconds) {
+                $origin = $currentMonsterName
+                $status = "Linked"
+                $id = $encounterID
+            } else {
+                $origin = "Ground/Unknown"
+                $status = "Orphaned"
+                $id = New-Guid
+            }
+
+            $correlatedLoot += [PSCustomObject]@{
+                Time     = $drop.Time
+                Source   = $origin
+                ID       = $id
+                Activity = "Looting" # Burying isn't a source of loot itself
+                Item     = $drop.Data
+                Amount   = $drop.Amount
+                Status   = $status
+                LagTime  = $lag
+            }
+        }
+        $pendingDrops = @()
+
+        # Reset for the next encounter
+        $encounterID = New-Guid
+        $currentMonsterName = $null
+        $lastPacketTime = $event.Time
+        $lastSkinFlag = $false
+        $lastButcherFlag = $false
+        $lastExtractFlag = $false
     } elseif ($event.EventType -eq 'Source') {
         $timeSinceLast = ($event.Time - $lastPacketTime).TotalSeconds
         $isSameEncounter = ($event.Data -eq $currentMonsterName -and $timeSinceLast -le $SessionTimeout)
