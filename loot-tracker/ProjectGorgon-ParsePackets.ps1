@@ -69,7 +69,7 @@ foreach ($captureFilePath in $captureFiles)
             $monsterName = $monsterName.Replace("Butcher Corpse", "");
             $monsterName = $monsterName.Replace("Extract Skull", "");
             $monsterName = $monsterName.Replace("Bury Corpse", "");
-            $monsterName = $monsterName.Trim()
+            $monsterName = $monsterName.Trim().Trim('-')
 
             $canSkin     = $rawString -match "Skin Corpse"
             $canButcher  = $rawString -match "Butcher Corpse"
