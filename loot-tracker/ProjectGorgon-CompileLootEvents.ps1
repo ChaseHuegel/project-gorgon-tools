@@ -31,7 +31,7 @@ function Get-OrphanSource {
         [int]$Buffer
     )
 
-    $bestMatch = $null
+    $bestMatch = "Ground/Unknown"
     $smallestLag = [double]::MaxValue
 
     foreach ($target in $Targets) {
@@ -45,10 +45,9 @@ function Get-OrphanSource {
         }
     }
 
-    if ($bestMatch) {
-        return $bestMatch
-    } else {
-        return "Ground/Unknown"
+    return [PSCustomObject]@{
+        Name = $bestMatch
+        Lag  = $smallestLag
     }
 }
 
@@ -124,16 +123,19 @@ foreach ($event in $timeline) {
         # A bury event indicates the end of an encounter.
         # Process any pending drops and associate them with the last known monster.
         foreach ($drop in $pendingDrops) {
-            $lag = ($event.Time - $drop.Time).TotalSeconds
+            $monsterLag = if ($currentMonsterName) { ($event.Time - $drop.Time).TotalSeconds } else { [double]::MaxValue }
+            $orphan = Get-OrphanSource -DropTime $drop.Time -Targets $targetResults -Buffer $BufferSeconds
 
-            if ($currentMonsterName -and $lag -le $BufferSeconds) {
+            if ($monsterLag -le $BufferSeconds -and $monsterLag -lt $orphan.Lag) {
                 $origin = $currentMonsterName
                 $status = "Linked"
                 $id = $encounterID
+                $lag = $monsterLag
             } else {
-                $origin = Get-OrphanSource -DropTime $drop.Time -Targets $targetResults -Buffer $BufferSeconds
-                $status = "Orphaned"
+                $origin = $orphan.Name
+                $status = if ($orphan.Name -eq "Ground/Unknown") { "Orphaned" } else { "Linked" }
                 $id = New-Guid
+                $lag = $orphan.Lag
             }
 
             $correlatedLoot += [PSCustomObject]@{
@@ -165,26 +167,28 @@ foreach ($event in $timeline) {
         $justExtracted = ($isSameEncounter -and $lastExtractFlag -and -not $event.HasExtract)
 
         foreach ($drop in $pendingDrops) {
-
-            $lag = ($event.Time - $drop.Time).TotalSeconds
+            $monsterLag = if ($currentMonsterName) { ($event.Time - $drop.Time).TotalSeconds } else { [double]::MaxValue }
+            $orphan = Get-OrphanSource -DropTime $drop.Time -Targets $targetResults -Buffer $BufferSeconds
 
             $thisActivity = "Looting" # Default
-            if ($justSkinned -and $lag -le $RetroactiveThreshold) {
+            if ($justSkinned -and $monsterLag -le $RetroactiveThreshold) {
                 $thisActivity = "Skinning"
-            } elseif ($justButchered -and $lag -le $RetroactiveThreshold) {
+            } elseif ($justButchered -and $monsterLag -le $RetroactiveThreshold) {
                 $thisActivity = "Butchering"
-            } elseif ($justExtracted -and $lag -le $RetroactiveThreshold) {
+            } elseif ($justExtracted -and $monsterLag -le $RetroactiveThreshold) {
                 $thisActivity = "Extracting"
             }
             
-            if ($currentMonsterName -and $lag -le $BufferSeconds) {
+            if ($monsterLag -le $BufferSeconds -and $monsterLag -lt $orphan.Lag) {
                 $origin = $currentMonsterName
                 $status = "Linked"
                 $id = $encounterID
+                $lag = $monsterLag
             } else {
-                $origin = Get-OrphanSource -DropTime $drop.Time -Targets $targetResults -Buffer $BufferSeconds
-                $status = "Orphaned"
+                $origin = $orphan.Name
+                $status = if ($orphan.Name -eq "Ground/Unknown") { "Orphaned" } else { "Linked" }
                 $id = New-Guid
+                $lag = $orphan.Lag
             }
 
             $correlatedLoot += [PSCustomObject]@{
