@@ -9,6 +9,24 @@ param (
 
 Add-Type -AssemblyName System.Drawing
 
+function ConvertTo-Grayscale {
+    param ($Image)
+    $newBitmap = New-Object System.Drawing.Bitmap $Image.Width, $Image.Height
+    $graphics = [System.Drawing.Graphics]::FromImage($newBitmap)
+    $colorMatrix = New-Object System.Drawing.Imaging.ColorMatrix -Property @{
+        Matrix00 = 0.3; Matrix01 = 0.3; Matrix02 = 0.3; Matrix03 = 0; Matrix04 = 0;
+        Matrix10 = 0.59; Matrix11 = 0.59; Matrix12 = 0.59; Matrix13 = 0; Matrix14 = 0;
+        Matrix20 = 0.11; Matrix21 = 0.11; Matrix22 = 0.11; Matrix23 = 0; Matrix24 = 0;
+        Matrix30 = 0; Matrix31 = 0; Matrix32 = 0; Matrix33 = 1; Matrix34 = 0;
+        Matrix40 = 0; Matrix41 = 0; Matrix42 = 0; Matrix43 = 0; Matrix44 = 1;
+    }
+    $attributes = New-Object System.Drawing.Imaging.ImageAttributes
+    $attributes.SetColorMatrix($colorMatrix)
+    $graphics.DrawImage($Image, (New-Object System.Drawing.Rectangle 0, 0, $Image.Width, $Image.Height), 0, 0, $Image.Width, $Image.Height, [System.Drawing.GraphicsUnit]::Pixel, $attributes)
+    $graphics.Dispose()
+    return $newBitmap
+}
+
 $currentDir = Get-Location
 $outputDir = "$currentDir\output"
 
@@ -37,10 +55,14 @@ while ($true) {
     $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
     try {
         $graphics.CopyFromScreen($X, $Y, 0, 0, $bitmap.Size)
-        $bitmap.Save($imgPath, [System.Drawing.Imaging.ImageFormat]::Png)
+        
+        # Pre-process the image
+        $processedBitmap = ConvertTo-Grayscale -Image $bitmap
+        $processedBitmap.Save($imgPath, [System.Drawing.Imaging.ImageFormat]::Png)
     } finally {
         $graphics.Dispose()
         $bitmap.Dispose()
+        if ($processedBitmap) { $processedBitmap.Dispose() }
     }
 
     # Use OCR to read the image

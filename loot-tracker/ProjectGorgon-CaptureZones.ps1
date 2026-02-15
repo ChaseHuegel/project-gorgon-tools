@@ -1,1 +1,1 @@
-& ".\ProjectGorgon-CaptureScreenText.ps1" -X 1700 -Y 0 -Width 170 -Height 50 -FileName "zones" -IntervalSeconds 5
+& ".\ProjectGorgon-CaptureScreenText.ps1" -X 1680 -Y 0 -Width 180 -Height 50 -FileName "zones" -IntervalSeconds 5
