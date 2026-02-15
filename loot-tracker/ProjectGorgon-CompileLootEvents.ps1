@@ -2,24 +2,56 @@
     [string]$ItemInputPath="output\parsed-chat.txt",
     [string]$EventInputPath="output\parsed-packets.txt",
     [string]$SessionInputPath="output\parsed-sessions.txt",
-    [string]$ZoneInputPath="output\zones.csv"
+    [string]$ZoneInputPath="output\zones.csv",
+    [string]$TargetInputPath="output\targets.csv"
 )
 
 if (-not (Test-Path $ItemInputPath))  { Write-Error "Items file not found"; return }
 if (-not (Test-Path $EventInputPath)) { Write-Error "Events file not found"; return }
 if (-not (Test-Path $SessionInputPath)) { Write-Error "Session file not found"; return }
 if (-not (Test-Path $ZoneInputPath)) { Write-Error "Zones file not found"; return }
+if (-not (Test-Path $TargetInputPath)) { Write-Error "Targets file not found"; return }
 
 $itemResults = Get-Content $ItemInputPath -Raw | ConvertFrom-Json
 $eventResults = Get-Content $EventInputPath -Raw | ConvertFrom-Json
 $sessionResults = Get-Content $SessionInputPath -Raw | ConvertFrom-Json
 $zoneResults = Import-Csv $ZoneInputPath
+$targetResults = Import-Csv $TargetInputPath
 
 $BufferSeconds = 10
 $SessionTimeout = 3
 # If an item drops less than this many seconds before a State Change packet,
 # we consider it part of that action (e.g. Skinning).
 $RetroactiveThreshold = 0.9
+
+function Get-OrphanSource {
+    param(
+        [DateTime]$DropTime,
+        [array]$Targets,
+        [int]$Buffer
+    )
+
+    $bestMatch = $null
+    $smallestLag = [double]::MaxValue
+
+    foreach ($target in $Targets) {
+        # Ensure target time is valid
+        if ($target.Time) {
+            $lag = ($DropTime - $target.Time).TotalSeconds
+            if ($lag -ge 0 -and $lag -le $Buffer -and $lag -lt $smallestLag) {
+                $bestMatch = $target.Text
+                $smallestLag = $lag
+            }
+        }
+    }
+
+    if ($bestMatch) {
+        return $bestMatch
+    } else {
+        return "Ground/Unknown"
+    }
+}
+
 
 $ParseDate = {
     param($dateInput)
@@ -54,6 +86,7 @@ $validSessions = $sessionResults | Select-Object @{N='Start';E={[DateTime]$_.Sta
                                                 @{N='End';E={[DateTime]$_.End}}
 
 $zoneResults = $zoneResults | Select-Object @{N='Time';E={[DateTime]$_.Time}}, Text | Sort-Object Time
+$targetResults = $targetResults | Select-Object @{N='Time';E={[DateTime]$_.Time}}, Text | Sort-Object Time
 
 # Filter out drops that do not fall within a session
 $lootEvents = $lootEvents | Where-Object {
@@ -98,7 +131,7 @@ foreach ($event in $timeline) {
                 $status = "Linked"
                 $id = $encounterID
             } else {
-                $origin = "Ground/Unknown"
+                $origin = Get-OrphanSource -DropTime $drop.Time -Targets $targetResults -Buffer $BufferSeconds
                 $status = "Orphaned"
                 $id = New-Guid
             }
@@ -149,7 +182,7 @@ foreach ($event in $timeline) {
                 $status = "Linked"
                 $id = $encounterID
             } else {
-                $origin = "Ground/Unknown"
+                $origin = Get-OrphanSource -DropTime $drop.Time -Targets $targetResults -Buffer $BufferSeconds
                 $status = "Orphaned"
                 $id = New-Guid
             }
