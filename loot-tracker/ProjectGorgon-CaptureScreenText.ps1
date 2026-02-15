@@ -69,9 +69,10 @@ while ($true) {
     $ocrResult = Convert-PsoImageToText -Path $imgPath
 
     # Clean and normalize the value
-    $currentText = if ($ocrResult.Text) { $ocrResult.Text.Trim() } else { $null }
+    $currentText = if ($ocrResult.Text) { ($ocrResult.Text -join ' ').Trim() } else { $null }
 
     if (-not [string]::IsNullOrWhiteSpace($currentText)) {
+        $currentText = ($currentText -replace '[^a-zA-Z\s]').Trim()
         if ($currentText -ne $lastText) {
             # Text changed
             $newRecord = [PSCustomObject]@{
