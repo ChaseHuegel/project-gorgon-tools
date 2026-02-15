@@ -1,1 +1,1 @@
-& ".\ProjectGorgon-CaptureScreenText.ps1" -X 1021 -Y 691 -Width 213 -Height 114 -FileName "targets" -IntervalSeconds 1
+& ".\ProjectGorgon-CaptureScreenText.ps1" -X 1021 -Y 691 -Width 213 -Height 114 -FileName "targets" -IntervalSeconds 0.5

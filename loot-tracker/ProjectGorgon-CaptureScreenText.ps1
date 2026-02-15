@@ -3,7 +3,7 @@ param (
     [int]$Y=0,
     [int]$Width=100,
     [int]$Height=100,
-    [int]$IntervalSeconds=5,
+    [float]$IntervalSeconds=5,
     [string]$FileName="screen"
 )
 
