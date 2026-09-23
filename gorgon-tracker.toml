@@ -1,0 +1,29 @@
+# gorgon-tracker configuration (optional; built-in defaults apply otherwise).
+# All values shown are defaults. Uncomment and edit to override.
+
+# [db]
+# path = "data/gorgon.db"
+
+# [capture]
+# interface = "auto"          # tshark interface id/name, or "auto"
+# tshark_path = "tshark"
+# ports = []                  # set via `gorgon-tracker find-ports`
+# bpf = ""                    # explicit BPF filter (wins over ports if set)
+
+# [chat]
+# log_dir = ""                # auto-detected Proton ChatLog dir when empty
+# tail = true
+
+# [ocr.zones]
+# region = [1680, 0, 180, 50] # x, y, width, height
+# interval_s = 5.0
+# heartbeat_s = 30.0
+
+# [ocr.targets]
+# region = [1021, 691, 213, 114]
+# interval_s = 0.5
+
+# [correlate]
+# buffer_seconds = 10.0
+# session_timeout = 3.0
+# retroactive_threshold = 0.9

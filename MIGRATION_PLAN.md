@@ -309,12 +309,12 @@ Phase 1 is intentionally first after scaffolding: it de-risks the correlator por
 Agents working on this project must update this section. Mark items `[x]` only when verified (tests/lint pass). Keep one item `[/]` at a time.
 
 ### Phase 0 — Scaffold
-- [ ] Repo layout: `src/gorgon_tracker/` package + `tests/`
-- [ ] `pyproject.toml` (uv/venv ready, dev deps: pytest, mypy, ruff)
-- [ ] `config.py` — TOML load + pydantic validation of §5.1 schema
-- [ ] `cli.py` — typer skeleton with all commands stubbed
-- [ ] `db.py` + `schema.sql` — sqlite bootstrap, WAL, `schema_migrations`, `PRAGMA user_version`
-- [ ] Exit criteria: `run` opens DB, `status` reports a session
+- [x] Repo layout: `src/gorgon_tracker/` package + `tests/`
+- [x] `pyproject.toml` (uv/venv ready, dev deps: pytest, mypy, ruff)
+- [x] `config.py` — TOML load + pydantic validation of §5.1 schema
+- [x] `cli.py` — typer skeleton with all commands stubbed
+- [x] `db.py` + `schema.sql` — sqlite bootstrap, WAL, `schema_migrations`, `PRAGMA user_version`
+- [x] Exit criteria: `run` opens DB, `status` reports a session
 
 ### Phase 1 — Offline core (parsers + correlator + replay/migrate)
 - [ ] `parsers/packets.py` — hex decode, monster-name cleanup, flags, session windows (§3.2)
