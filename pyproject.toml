@@ -48,6 +48,10 @@ python_version = "3.11"
 strict = true
 packages = ["gorgon_tracker"]
 
+[[tool.mypy.overrides]]
+module = ["pytesseract.*"]
+ignore_missing_imports = true
+
 [tool.ruff]
 line-length = 120
 target-version = "py311"

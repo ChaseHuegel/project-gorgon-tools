@@ -62,13 +62,27 @@ def test_version_command() -> None:
 
 
 def test_stub_commands_report_pending() -> None:
-    for command in ("stop", "calibrate", "serve"):
+    for command in ("stop", "serve"):
         result = runner.invoke(app, [command])
         assert result.exit_code == 0, command
         assert "not implemented yet" in result.output
     export = runner.invoke(app, ["export", "--since", "2026-01-01"])
     assert export.exit_code == 0
     assert "not implemented yet" in export.output
+
+
+def test_calibrate_command_runs(tmp_path: Path, monkeypatch) -> None:
+    from gorgon_tracker import calibrate as calibrate_mod
+
+    def fake_preview(cfg, region, watch, snapshot_path) -> None:  # noqa: ARG001
+        print("OCR: Fairy Glen")
+
+    monkeypatch.setattr(calibrate_mod, "preview", fake_preview)
+    result = runner.invoke(
+        app, ["calibrate", "--region", "10,20,30,40", "--snapshot", str(tmp_path / "shot.png")]
+    )
+    assert result.exit_code == 0, result.output
+    assert "OCR: Fairy Glen" in result.output
 
 
 def test_find_ports_reports_when_game_absent() -> None:

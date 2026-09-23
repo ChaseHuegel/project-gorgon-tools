@@ -136,9 +136,23 @@ def find_ports() -> None:
 
 
 @app.command()
-def calibrate() -> None:
-    """Interactively tune OCR capture regions (implemented in Phase 4)."""
-    console.print("[yellow]calibrate: not implemented yet.[/yellow]")
+def calibrate(
+    ctx: typer.Context,
+    kind: str = typer.Option("zones", help="Region to calibrate: zones or targets."),
+    region: str = typer.Option("", help="Region as x,y,width,height (defaults to the configured region)."),
+    watch: bool = typer.Option(False, help="Re-capture every second until Ctrl-C."),
+    snapshot: Path | None = typer.Option(  # noqa: B008 - required by typer
+        None, help="Where to save the preprocessed snapshot (default: /tmp/gorgon-calibrate.png)."
+    ),
+) -> None:
+    """Tune an OCR capture region: show what tesseract sees and its OCR output."""
+    import tempfile
+
+    from . import calibrate as calibrate_mod
+
+    region_list = calibrate_mod.parse_region(region) if region else calibrate_mod.default_region(ctx.obj, kind)
+    snapshot_path = snapshot or (Path(tempfile.gettempdir()) / "gorgon-calibrate.png")
+    calibrate_mod.preview(ctx.obj, region_list, watch, str(snapshot_path))
 
 
 @app.command()

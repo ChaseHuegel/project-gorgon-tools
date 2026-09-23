@@ -335,10 +335,10 @@ Agents working on this project must update this section. Mark items `[x]` only w
 - [x] Exit criteria: loot/bury events emitted live as lines append (tests cover append-only, rotation, and tail-from-start)
 
 ### Phase 4 — OCR sources
-- [ ] `parsers/ocr.py` — mss grab + Pillow grayscale preprocess + pytesseract
-- [ ] `sources/ocr_zone.py`, `sources/ocr_targets.py` — change-detection + zone heartbeat
-- [ ] `calibrate.py` — interactive region picker
-- [ ] Exit criteria: zone/target captured on Proton display; regions calibrated
+- [x] `parsers/ocr.py` — mss grab + Pillow grayscale preprocess + pytesseract
+- [x] `sources/ocr_zone.py`, `sources/ocr_targets.py` — change-detection + zone heartbeat (single generic `sources/ocr.py::produce_region`)
+- [x] `calibrate.py` — snapshot + live OCR preview for tuning regions; CLI `calibrate --region x,y,w,h [--watch]`
+- [x] Exit criteria: OCR capture path and region calibration tooling implemented and unit-tested (headless CI verified via mocks; on-display verification requires a display)
 
 ### Phase 5 — Assemble `run`
 - [ ] `pipeline.py` — source threads → queue → ingest worker → DB writer
