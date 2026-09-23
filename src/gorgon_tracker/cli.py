@@ -118,8 +118,21 @@ def stop() -> None:
 
 @app.command()
 def find_ports() -> None:
-    """Detect the game's network ports for a capture filter (implemented in Phase 2)."""
-    console.print("[yellow]find-ports: not implemented yet.[/yellow]")
+    """Detect the game's network ports and print a capture BPF filter."""
+    from . import ports
+
+    tcp_ports, udp_ports = ports.discover_ports()
+    if not tcp_ports and not udp_ports:
+        console.print("[yellow]No Project Gorgon process found. Start the game and retry.[/yellow]")
+        raise typer.Exit(1)
+    table = Table(title="Project Gorgon ports")
+    table.add_column("protocol")
+    table.add_column("ports")
+    table.add_row("tcp", ", ".join(str(p) for p in sorted(tcp_ports)) or "-")
+    table.add_row("udp", ", ".join(str(p) for p in sorted(udp_ports)) or "-")
+    console.print(table)
+    console.print("[green]" + ports.build_bpf(tcp_ports, udp_ports) + "[/green]")
+    console.print("Copy the filter into [codeml][capture] bpf[/codeml] or use [b]run --auto-ports[/b].")
 
 
 @app.command()

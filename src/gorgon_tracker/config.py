@@ -24,6 +24,8 @@ class CaptureConfig(BaseModel):
 class ChatConfig(BaseModel):
     log_dir: str = ""
     tail: bool = True
+    poll_interval_s: float = 1.0
+    tail_from_start: bool = False
 
 
 class OcrRegionConfig(BaseModel):

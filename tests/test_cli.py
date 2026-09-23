@@ -62,13 +62,19 @@ def test_version_command() -> None:
 
 
 def test_stub_commands_report_pending() -> None:
-    for command in ("stop", "find-ports", "calibrate", "serve"):
+    for command in ("stop", "calibrate", "serve"):
         result = runner.invoke(app, [command])
         assert result.exit_code == 0, command
         assert "not implemented yet" in result.output
     export = runner.invoke(app, ["export", "--since", "2026-01-01"])
     assert export.exit_code == 0
     assert "not implemented yet" in export.output
+
+
+def test_find_ports_reports_when_game_absent() -> None:
+    result = runner.invoke(app, ["find-ports"])
+    assert result.exit_code == 1
+    assert "No Project Gorgon process found" in result.output
 
 
 def test_replay_cli_end_to_end(tmp_path: Path) -> None:

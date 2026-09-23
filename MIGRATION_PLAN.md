@@ -326,13 +326,13 @@ Agents working on this project must update this section. Mark items `[x]` only w
 - [x] Exit criteria: replay produces `loot_drops` matching the committed golden output; `v_drop_rates`/`v_summary` views materialize. Validation against the user's real `.pcapng`/CSV history is ready via `gorgon-tracker replay` / `migrate`.
 
 ### Phase 2 — Live packet source
-- [ ] `sources/tshark_live.py` — long-lived `tshark -T <fields>` stdout stream, line parser
-- [ ] `find-ports` — Proton-aware `ss -tnp` discovery → BPF
-- [ ] Exit criteria: streaming parse == replay parse results
+- [x] `sources/tshark_live.py` — long-lived `tshark -T <fields>` stdout stream, line parser
+- [x] `find-ports` — Proton-aware `ss -tnp` discovery → BPF (`ports.py`)
+- [x] Exit criteria: streaming parse == replay parse results (parity test `test_live_parse_matches_replay_parse`)
 
 ### Phase 3 — Live chat tail
-- [ ] `sources/chat_tail.py` — watchdog tail of newest CompatData chat log, incremental regex parse
-- [ ] Exit criteria: loot/bury events appear live during a session
+- [x] `sources/chat_tail.py` — poll-based tail of the newest CompatData chat log, incremental regex parse. Deviation: polling (configurable `chat.poll_interval_s`) instead of `watchdog` keeps the tool self-contained and rotation-safe without a native dependency.
+- [x] Exit criteria: loot/bury events emitted live as lines append (tests cover append-only, rotation, and tail-from-start)
 
 ### Phase 4 — OCR sources
 - [ ] `parsers/ocr.py` — mss grab + Pillow grayscale preprocess + pytesseract
