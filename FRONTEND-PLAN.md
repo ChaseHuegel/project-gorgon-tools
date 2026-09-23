@@ -186,10 +186,10 @@ Agents working on this project must update this section. Mark items `[x]` only w
 - [x] Exit criteria: `tests/test_serve.py` unchanged & green; tomlkit round-trip preserves comments (`[be]`)
 
 ### Phase 1 — Status + config APIs
-- [ ] `GET /api/config` (effective JSON + active path), `PUT /api/config` (validated partial update) (`[be]`)
-- [ ] `GET /api/status` — pid/running, open session, per-source counts, config/db path, setup warnings (`[be]`)
-- [ ] `POST /api/daemon/start`, `POST /api/daemon/stop` (mock subprocess in tests) (`[be]`)
-- [ ] Exit criteria: endpoints verified with `TestClient`; daemon start/stop mocked without real fork (`[be]`)
+- [x] `GET /api/config` (effective JSON + active path), `PUT /api/config` (validated partial update) (`[be]`)
+- [x] `GET /api/status` — pid/running, open session, per-source counts, config/db path, setup warnings (`[be]`)
+- [x] `POST /api/daemon/start`, `POST /api/daemon/stop` (mock subprocess in tests) (`[be]`)
+- [x] Exit criteria: endpoints verified with `TestClient`; daemon start/stop mocked without real fork (`[be]`)
 
 ### Phase 2 — Offline + calibration endpoints
 - [ ] `POST /api/ports/discover` (+ optional `write_config`) (`[be]`)
