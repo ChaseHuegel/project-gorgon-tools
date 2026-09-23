@@ -1,0 +1,31 @@
+# Project Gorgon loot tracker (gorgon-tracker) systemd unit
+#
+# Install:
+#   install -m 0644 packaging/gorgon-tracker.service /etc/systemd/system/
+#   systemctl daemon-reload
+#   systemctl enable --now gorgon-tracker.service
+#
+# The service runs in the foreground; gorgon-tracker writes a pidfile next to its
+# database so `gorgon-tracker stop` still works for manual runs.
+#
+# NOTE: tshark needs CAP_NET_RAW (see README) and the service user must be able
+# to reach the game's Proton chat logs and the display for OCR.
+
+[Unit]
+Description=Project Gorgon loot tracker
+Documentation=file:///usr/share/doc/gorgon-tracker/README.md
+After=network.target
+
+[Service]
+Type=simple
+# Point --config at your gorgon-tracker.toml (db path, chat log dir, capture iface).
+ExecStart=/usr/local/bin/gorgon-tracker run --config /etc/gorgon-tracker/gorgon-tracker.toml
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=20
+# Run as the desktop user so OCR screen capture and the Proton prefix are accessible.
+User=%i
+
+[Install]
+WantedBy=multi-user.target

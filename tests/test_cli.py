@@ -62,13 +62,20 @@ def test_version_command() -> None:
 
 
 def test_stub_commands_report_pending() -> None:
-    for command in ("stop", "serve"):
+    for command in ("serve",):
         result = runner.invoke(app, [command])
         assert result.exit_code == 0, command
         assert "not implemented yet" in result.output
     export = runner.invoke(app, ["export", "--since", "2026-01-01"])
     assert export.exit_code == 0
     assert "not implemented yet" in export.output
+
+
+def test_stop_reports_not_running(tmp_path: Path) -> None:
+    db_path = str(tmp_path / "nodb.db")
+    result = runner.invoke(app, ["stop", "--db", db_path])
+    assert result.exit_code == 0
+    assert "not running" in result.output
 
 
 def test_calibrate_command_runs(tmp_path: Path, monkeypatch) -> None:
@@ -132,4 +139,42 @@ def test_migrate_cli(tmp_path: Path) -> None:
     conn = db.connect(db_path)
     db.migrate(conn)
     assert conn.execute("SELECT COUNT(*) c FROM loot_drops").fetchone()["c"] == 1
+    conn.close()
+
+
+def test_run_live_end_to_end_via_subprocess(tmp_path: Path) -> None:
+    """Full CLI: start `run`, append a chat line, SIGTERM, verify graceful close."""
+    import signal
+    import subprocess
+    import sys
+    import time
+
+    chats = tmp_path / "chats"
+    chats.mkdir()
+    log = chats / "session.log"
+    log.write_text("")  # created before the tool starts -> tailed from offset 0
+
+    config = tmp_path / "gorgon-tracker.toml"
+    config.write_text(
+        f'[db]\npath = "{tmp_path / "live.db"}"\n'
+        "[capture]\nenabled = false\n"
+        "[ocr]\nenabled = false\n"
+        f"[chat]\nlog_dir = \"{chats}\"\ntail = true\n"
+    )
+
+    binary = Path(sys.executable).parent / "gorgon-tracker"
+    proc = subprocess.Popen([str(binary), "--config", str(config), "run"])
+    try:
+        time.sleep(0.8)
+        with log.open("a") as fh:
+            fh.write("26-01-11 15:00:01 [Status] Live Bone x1 added to inventory.\n")
+        time.sleep(0.6)
+    finally:
+        proc.send_signal(signal.SIGTERM)
+        assert proc.wait(timeout=15) == 0
+
+    conn = db.connect(tmp_path / "live.db")
+    db.migrate(conn)
+    assert conn.execute("SELECT COUNT(*) c FROM loot_drops").fetchone()["c"] == 1
+    assert db.open_session(conn) is None
     conn.close()

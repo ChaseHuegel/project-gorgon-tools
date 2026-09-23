@@ -341,10 +341,10 @@ Agents working on this project must update this section. Mark items `[x]` only w
 - [x] Exit criteria: OCR capture path and region calibration tooling implemented and unit-tested (headless CI verified via mocks; on-display verification requires a display)
 
 ### Phase 5 — Assemble `run`
-- [ ] `pipeline.py` — source threads → queue → ingest worker → DB writer
-- [ ] Session lifecycle: create/continue, SIGINT/SIGTERM graceful close, crash-safe flush/checkpoint
-- [ ] `status`/`stop`; `--daemon` + systemd unit
-- [ ] Exit criteria: start/stop freely between sessions with zero manual steps
+- [x] `pipeline.py` — source threads → queue → ingest worker → DB writer (single SQLite connection owned by the pipeline thread)
+- [x] Session lifecycle: create/continue on start, SIGINT/SIGTERM graceful close, crash-safe flush; `run` opens/reuses a session and closes it on exit
+- [x] `status`/`stop` (pidfile-based); `run --daemon` (double-fork) + `packaging/gorgon-tracker.service` systemd unit
+- [x] Exit criteria: start/stop freely between sessions (verified end-to-end: foreground + daemon runs, SIGTERM, pidfile lifecycle)
 
 ### Phase 6 — CSV compat + web
 - [ ] `export.py` — backwards-compatible CSV export

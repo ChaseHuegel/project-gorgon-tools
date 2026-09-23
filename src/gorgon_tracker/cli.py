@@ -2,19 +2,25 @@
 
 from __future__ import annotations
 
+import logging
+import os
 import signal
 import sqlite3
 import sys
 import threading
+from collections import Counter
 from pathlib import Path
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from . import __version__
+from . import __version__, pipeline
+from . import daemon as daemon_mod
 from . import db as database
 from .config import load_config
+
+logger = logging.getLogger("gorgon_tracker.cli")
 
 app = typer.Typer(
     name="gorgon-tracker",
@@ -56,29 +62,55 @@ def _install_signal_stop(stop_event: threading.Event) -> None:
 def run(
     ctx: typer.Context,
     oneshot: bool = typer.Option(False, help="Open a session and exit immediately (used for testing)."),
-    daemon: bool = typer.Option(False, help="Detach into the background (implemented in Phase 5)."),
+    daemon: bool = typer.Option(False, help="Detach into the background (Linux only)."),
+    quiet: bool = typer.Option(False, help="Suppress periodic status output."),
     db_path: str | None = typer.Option(None, "--db", help="Override the SQLite database path."),
 ) -> None:
-    """Open a capture session and run until stopped (Ctrl-C)."""
-    del daemon
+    """Run the live capture pipeline until stopped (Ctrl-C or SIGTERM)."""
     _apply_db(ctx, db_path)
-    conn = _connect(ctx.obj.db.path)
-    session_id = database.open_or_new_session(conn, sys.platform, ctx.obj.model_dump())
-    console.print(f"[green]Session {session_id}[/green] open at {ctx.obj.db.path}")
+
+    pid_path = daemon_mod.pidfile_path(ctx.obj.db.path)
+    if daemon and sys.platform != "win32":
+        logger.info("daemonizing gorgon-tracker")
+        daemon_mod.daemonize(str(pid_path.with_suffix(".log")))
+    daemon_mod.write_pidfile(pid_path)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
     if oneshot:
+        conn = _connect(ctx.obj.db.path)
+        session_id = database.open_or_new_session(conn, sys.platform, ctx.obj.model_dump())
+        console.print(f"[green]Session {session_id}[/green] open at {ctx.obj.db.path}")
         database.close_session(conn, session_id)
         console.print("[green]Session closed.[/green]")
         conn.close()
         return
+
     stop_event = threading.Event()
     _install_signal_stop(stop_event)
+
+    def _on_session(session_id: int) -> None:
+        console.print(f"[green]Session {session_id}[/green] open at {ctx.obj.db.path}")
+
+    def _status(counters: Counter[str]) -> None:
+        console.print(
+            f"[cyan]live counts: {', '.join(f'{k}={v}' for k, v in sorted(counters.items()))}[/cyan]"
+        )
+
     console.print("[yellow]Press Ctrl-C to stop.[/yellow]")
-    # Phase 5: the capture pipeline will run here.
-    while not stop_event.wait(0.5):
-        pass
-    database.close_session(conn, session_id)
-    console.print("[green]Session closed cleanly.[/green]")
-    conn.close()
+    try:
+        session_id, counters = pipeline.run_pipeline(
+            ctx.obj,
+            sys.platform,
+            stop_event,
+            _status if not quiet else None,
+            _on_session,
+        )
+    finally:
+        daemon_mod.remove_pidfile(pid_path)
+
+    console.print("[green]Capture finished.[/green]")
+    for key, value in sorted(counters.items()):
+        console.print(f"  {key}: {value}")
 
 
 @app.command()
@@ -111,9 +143,23 @@ def status(
 
 
 @app.command()
-def stop() -> None:
-    """Stop a running daemon (implemented in Phase 5)."""
-    console.print("[yellow]stop: not implemented yet.[/yellow]")
+def stop(
+    ctx: typer.Context,
+    db_path: str | None = typer.Option(None, "--db", help="Override the SQLite database path."),
+) -> None:
+    """Stop a running daemon via its pidfile."""
+    _apply_db(ctx, db_path)
+    pid_path = daemon_mod.pidfile_path(ctx.obj.db.path)
+    pid = daemon_mod.read_pidfile(pid_path)
+    if pid is None:
+        console.print("[yellow]gorgon-tracker is not running.[/yellow]")
+        return
+    os.kill(pid, signal.SIGTERM)
+    if daemon_mod.wait_for_exit(pid):
+        daemon_mod.remove_pidfile(pid_path)
+        console.print(f"[green]Stopped pid {pid}.[/green]")
+    else:
+        console.print(f"[red]pid {pid} did not exit within the timeout.[/red]")
 
 
 @app.command()

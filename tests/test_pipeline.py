@@ -1,0 +1,84 @@
+import threading
+import time
+from pathlib import Path
+
+from gorgon_tracker import db, pipeline
+from gorgon_tracker.config import TrackerConfig
+
+from . import scenario
+
+
+def _live_cfg(tmp_path: Path) -> TrackerConfig:
+    cfg = TrackerConfig()
+    cfg.db.path = str(tmp_path / "live.db")
+    cfg.capture.enabled = False
+    cfg.ocr.enabled = False
+    cfg.chat.tail = True
+    cfg.chat.log_dir = str(tmp_path / "chats")
+    cfg.chat.tail_from_start = True
+    cfg.chat.poll_interval_s = 0.02
+    return cfg
+
+
+def _line(seconds: float, item: str, amount: int = 1) -> str:
+    return f"{scenario.local_wall(seconds)} [Status] {item} x{amount} added to inventory."
+
+
+def test_pipeline_chat_only_end_to_end(tmp_path: Path) -> None:
+    chats = tmp_path / "chats"
+    chats.mkdir()
+    log = chats / "session.log"
+    log.write_text("garbage\n")
+
+    cfg = _live_cfg(tmp_path)
+    stop = threading.Event()
+    result: dict = {}
+
+    def on_session(session_id: int) -> None:
+        result["session_id"] = session_id
+
+    thread = threading.Thread(
+        target=lambda: result.update(
+            session=(
+                pipeline.run_pipeline(cfg, "linux", stop, on_session=on_session)[0]
+            )
+        ),
+        daemon=True,
+    )
+    thread.start()
+    time.sleep(0.15)
+
+    with log.open("a") as fh:
+        fh.write(_line(1.0, "Bat Wing", 2) + "\n")
+        fh.write(_line(1.0, "Rat Jaw") + "\n")
+    time.sleep(0.3)
+
+    stop.set()
+    thread.join(timeout=5)
+
+    conn = db.connect(cfg.db.path)
+    db.migrate(conn)
+    row = conn.execute("SELECT COUNT(*) c FROM loot_drops WHERE status='Linked'").fetchone()
+    assert row["c"] == 2
+    amounts = conn.execute("SELECT amount FROM loot_drops ORDER BY item").fetchall()
+    assert [r["amount"] for r in amounts] == [2, 1]
+    assert conn.execute("SELECT COUNT(*) c FROM loot").fetchone()["c"] == 2
+    encounters = conn.execute("SELECT COUNT(*) c FROM encounters").fetchone()["c"]
+    assert encounters == 1
+    # Pipeline-owned session is closed when the run finishes.
+    assert db.open_session(conn) is None
+    conn.close()
+
+
+def test_pipeline_reports_no_empty_producers(tmp_path: Path, monkeypatch) -> None:
+    cfg = _live_cfg(tmp_path)
+    emitted: list = []
+
+    def fake_emit(event: object) -> None:
+        emitted.append(event)
+
+    producers = pipeline.build_producers(cfg, fake_emit)
+    names = [name for name, _ in producers]
+    assert "chat" in names
+    assert "packet" not in names  # capture disabled
+    assert "zone" not in names and "target" not in names  # ocr disabled

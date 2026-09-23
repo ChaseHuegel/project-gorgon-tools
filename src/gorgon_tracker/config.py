@@ -15,6 +15,7 @@ class DbConfig(BaseModel):
 
 
 class CaptureConfig(BaseModel):
+    enabled: bool = True
     tshark_path: str = "tshark"
     interface: str = "auto"
     ports: list[int] = Field(default_factory=list)
@@ -42,6 +43,7 @@ class OcrRegionConfig(BaseModel):
 
 
 class OcrConfig(BaseModel):
+    enabled: bool = True
     tesseract_path: str = "tesseract"
     lang: str = "eng"
     zones: OcrRegionConfig = Field(
