@@ -266,16 +266,41 @@ def migrate(
 
 @app.command()
 def export(
+    ctx: typer.Context,
     since: str | None = typer.Option(None, help="Only export loot_drops at or after this ISO time."),
+    out: Path = typer.Option(  # noqa: B008 - required by typer
+        "loot.csv", "--out", "-o", help="Destination CSV file."
+    ),
+    db_path: str | None = typer.Option(None, "--db", help="Override the SQLite database path."),
 ) -> None:
-    """Backwards-compatible CSV export (implemented in Phase 6)."""
-    console.print(f"[yellow]export: not implemented yet. since={since}[/yellow]")
+    """Export correlated loot to a legacy-compatible CSV."""
+    from . import export as export_mod
+    from .timeutil import iso_to_ms
+
+    _apply_db(ctx, db_path)
+    conn = _connect(ctx.obj.db.path)
+    try:
+        since_ms = iso_to_ms(since) if since else None
+        with out.open("w", newline="", encoding="utf-8") as fh:
+            count = export_mod.export_loot_csv(conn, fh, since_ms)
+    finally:
+        conn.close()
+    console.print(f"[green]Exported {count} loot rows to {out}[/green]")
 
 
 @app.command()
-def serve() -> None:
-    """Web UI over the database (implemented in Phase 6)."""
-    console.print("[yellow]serve: not implemented yet.[/yellow]")
+def serve(
+    ctx: typer.Context,
+    host: str = typer.Option("127.0.0.1", help="Bind host."),
+    port: int = typer.Option(8000, help="Bind port."),
+    db_path: str | None = typer.Option(None, "--db", help="Override the SQLite database path."),
+) -> None:
+    """Serve the loot data over a read-only HTTP API."""
+    from . import serve as serve_mod
+
+    _apply_db(ctx, db_path)
+    console.print(f"[cyan]Serving {ctx.obj.db.path} at http://{host}:{port}[/cyan]")
+    serve_mod.run_serve(ctx.obj.db.path, host, port)
 
 
 @app.command()

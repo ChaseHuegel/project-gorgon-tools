@@ -347,10 +347,10 @@ Agents working on this project must update this section. Mark items `[x]` only w
 - [x] Exit criteria: start/stop freely between sessions (verified end-to-end: foreground + daemon runs, SIGTERM, pidfile lifecycle)
 
 ### Phase 6 — CSV compat + web
-- [ ] `export.py` — backwards-compatible CSV export
-- [ ] Aggregation SQL views (`v_drop_rates`, `v_summary`, `v_sessions`)
-- [ ] `serve.py` — read-only FastAPI browsing over same DB
-- [ ] Exit criteria: web browsing of loot data works off the same DB
+- [x] `export.py` — backwards-compatible CSV export (`export [--since]`, same header/columns as the legacy loot.csv)
+- [x] Aggregation SQL views (`v_drop_rates`, `v_summary`, `v_sessions`) — in `schema.sql`. Note: `v_drop_rates` counts encounters as distinct `encounter_id` per monster so `drops/encounters` is a rate.
+- [x] `serve.py` — read-only FastAPI browsing over the same DB (`serve --host --port`; endpoints `/health /sessions /summary /drop-rates /loot`)
+- [x] Exit criteria: web browsing of loot data works off the same DB
 
 ### Cross-cutting
 - [ ] README updated for Linux setup (tshark setcap, tesseract install, Proton chat dir)

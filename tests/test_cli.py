@@ -61,14 +61,22 @@ def test_version_command() -> None:
     assert result.output.strip() == "0.1.0"
 
 
-def test_stub_commands_report_pending() -> None:
-    for command in ("serve",):
-        result = runner.invoke(app, [command])
+def test_all_commands_registered() -> None:
+    for command in (
+        "run",
+        "status",
+        "stop",
+        "find-ports",
+        "calibrate",
+        "replay",
+        "migrate",
+        "export",
+        "serve",
+        "config",
+        "version",
+    ):
+        result = runner.invoke(app, [command, "--help"])
         assert result.exit_code == 0, command
-        assert "not implemented yet" in result.output
-    export = runner.invoke(app, ["export", "--since", "2026-01-01"])
-    assert export.exit_code == 0
-    assert "not implemented yet" in export.output
 
 
 def test_stop_reports_not_running(tmp_path: Path) -> None:
