@@ -100,6 +100,17 @@ def _merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def config_from_dict(data: dict[str, Any]) -> TrackerConfig:
+    """Build and validate a :class:`TrackerConfig` from raw TOML data (merged over defaults)."""
+    merged = _merge(TrackerConfig().model_dump(), data)
+    chat = merged["chat"]
+    if not chat.get("log_dir"):
+        chat["log_dir"] = default_chat_log_dir()
+    cfg = TrackerConfig.model_validate(merged)
+    cfg.db.path = str(Path(cfg.db.path).expanduser().resolve())
+    return cfg
+
+
 def load_config(path: str | None = None) -> TrackerConfig:
     """Load configuration from an explicit path, env var, or the default candidates."""
     explicit: str | None = path
@@ -120,10 +131,9 @@ def load_config(path: str | None = None) -> TrackerConfig:
                     data = tomllib.load(fh)
                 break
 
-    merged = _merge(TrackerConfig().model_dump(), data)
-    chat = merged["chat"]
-    if not chat.get("log_dir"):
-        chat["log_dir"] = default_chat_log_dir()
-    cfg = TrackerConfig.model_validate(merged)
-    cfg.db.path = str(Path(cfg.db.path).expanduser().resolve())
-    return cfg
+    return config_from_dict(data)
+
+
+def effective_config_dict(data: dict[str, Any]) -> dict[str, Any]:
+    """Return the effective (defaults-merged) config as a plain dict, for JSON APIs."""
+    return config_from_dict(data).model_dump()

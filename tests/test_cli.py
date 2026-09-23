@@ -72,6 +72,7 @@ def test_all_commands_registered() -> None:
         "migrate",
         "export",
         "serve",
+        "web",
         "config",
         "version",
     ):

@@ -1,9 +1,15 @@
-"""Read-only web UI over the gorgon-tracker database."""
+"""Read-only web API over the gorgon-tracker database.
+
+:func:`build_app` returns the minimal read-only FastAPI used by the ``serve``
+command. The shared router is also mounted by the full ``web`` UI app.
+"""
 
 from __future__ import annotations
 
 import sqlite3
 from typing import Any
+
+from fastapi import APIRouter, FastAPI
 
 _QUERIES: dict[str, str] = {
     "sessions": "SELECT id, uuid, started_at, ended_at, platform FROM sessions ORDER BY started_at DESC",
@@ -16,37 +22,43 @@ _QUERIES: dict[str, str] = {
 }
 
 
-def build_app(db_path: str) -> Any:
-    """Create the FastAPI app (read-only); callers run uvicorn over it."""
-    from fastapi import FastAPI
+class _DB:
+    """Holds an open sqlite connection for read-only endpoint dependencies."""
 
-    app = FastAPI(title="gorgon-tracker", version="0.1.0", description="Project Gorgon loot data")
+    def __init__(self, db_path: str) -> None:
+        self.db_path = db_path
 
-    def connect() -> sqlite3.Connection:
-        conn = sqlite3.connect(db_path)
+    def connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         return conn
 
-    def rows(query: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
-        conn = connect()
+    def rows(self, query: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
+        conn = self.connect()
         try:
             return [dict(r) for r in conn.execute(query, params)]
         finally:
             conn.close()
 
-    @app.get("/health")
+
+def build_read_router(db_path: str) -> tuple[APIRouter, _DB]:
+    """Create the shared read-only router plus its DB dependency handle."""
+    db = _DB(db_path)
+    router = APIRouter()
+
+    @router.get("/health")
     def health() -> dict[str, Any]:
-        return {"status": "ok", "db": db_path}
+        return {"status": "ok", "db": db.db_path}
 
-    @app.get("/sessions")
+    @router.get("/sessions")
     def sessions() -> list[dict[str, Any]]:
-        return rows(_QUERIES["sessions"])
+        return db.rows(_QUERIES["sessions"])
 
-    @app.get("/summary")
+    @router.get("/summary")
     def summary() -> list[dict[str, Any]]:
-        return rows(_QUERIES["summary"])
+        return db.rows(_QUERIES["summary"])
 
-    @app.get("/drop-rates")
+    @router.get("/drop-rates")
     def drop_rates(monster: str | None = None, item: str | None = None) -> list[dict[str, Any]]:
         base = _QUERIES["drop_rates"]
         clauses, params = [], []
@@ -57,13 +69,13 @@ def build_app(db_path: str) -> Any:
             clauses.append("item = ?")
             params.append(item)
         query = base + ((" WHERE " + " AND ".join(clauses)) if clauses else "")
-        return rows(query, tuple(params))
+        return db.rows(query, tuple(params))
 
-    @app.get("/loot")
+    @router.get("/loot")
     def loot(limit_rows: int = 200) -> list[dict[str, Any]]:
-        return rows(_QUERIES["loot"], (max(1, min(limit_rows, 5000)),))
+        return db.rows(_QUERIES["loot"], (max(1, min(limit_rows, 5000)),))
 
-    @app.get("/")
+    @router.get("/")
     def index() -> dict[str, Any]:
         endpoints = [
             "/health",
@@ -74,6 +86,14 @@ def build_app(db_path: str) -> Any:
         ]
         return {"service": "gorgon-tracker", "endpoints": endpoints}
 
+    return router, db
+
+
+def build_app(db_path: str) -> FastAPI:
+    """Create the read-only FastAPI app (used by ``serve``)."""
+    router, _ = build_read_router(db_path)
+    app = FastAPI(title="gorgon-tracker", version="0.1.0", description="Project Gorgon loot data")
+    app.include_router(router)
     return app
 
 

@@ -314,6 +314,22 @@ def config(
 
 
 @app.command()
+def web(
+    ctx: typer.Context,
+    host: str = typer.Option("127.0.0.1", help="Bind host."),
+    port: int = typer.Option(8000, help="Bind port."),
+    config_file: str | None = typer.Option(None, "--config", "-c", help="Path to a gorgon-tracker.toml file."),
+    db_path: str | None = typer.Option(None, "--db", help="Override the SQLite database path."),
+) -> None:
+    """Open the browser UI: configure, run, and browse loot data."""
+    from . import web as web_mod
+
+    _apply_db(ctx, db_path)
+    console.print(f"[cyan]Web UI serving {ctx.obj.db.path} at http://{host}:{port}[/cyan]")
+    web_mod.run_web(ctx.obj.db.path, config_file, host, port)
+
+
+@app.command()
 def version() -> None:
     """Print the version."""
     console.print(__version__)
