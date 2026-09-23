@@ -130,22 +130,65 @@ def calibrate() -> None:
 
 @app.command()
 def replay(
+    ctx: typer.Context,
     captures: list[Path] = typer.Argument(  # noqa: B008 - required by typer
-        ..., help="Path or glob of .pcapng capture files."
+        ..., help=".pcapng / pre-extracted .json / chat .txt/.log / zone or target .csv inputs."
     ),
+    chat_dir: Path | None = typer.Option(  # noqa: B008 - required by typer
+        None, "--chat-dir", help="Directory of Project Gorgon chat logs."
+    ),
+    db_path: str | None = typer.Option(None, "--db", help="Override the SQLite database path."),
 ) -> None:
-    """Offline-ingest historical packet captures (implemented in Phase 1)."""
-    console.print(f"[yellow]replay: not implemented yet. Received {len(captures)} capture path(s).[/yellow]")
+    """Offline-ingest historical captures through the same parser and correlator."""
+    from . import replay as replay_mod
+
+    _apply_db(ctx, db_path)
+    conn = _connect(ctx.obj.db.path)
+    inputs = replay_mod.expand_inputs(captures)
+    try:
+        stats = replay_mod.run_replay(conn, ctx.obj, inputs, chat_dir, sys.platform)
+    finally:
+        conn.close()
+    console.print("[green]Replay complete.[/green]")
+    table = Table(title="Replay summary")
+    for key, value in stats.items():
+        table.add_row(key, str(value))
+    console.print(table)
 
 
 @app.command()
 def migrate(
+    ctx: typer.Context,
     files: list[Path] = typer.Argument(  # noqa: B008 - required by typer
         ..., help="Legacy CSV/JSON output files to import."
     ),
+    kind: str | None = typer.Option(
+        None,
+        help="Force import kind: loot, zones, targets, chat-json, packets-json.",
+    ),
+    db_path: str | None = typer.Option(None, "--db", help="Override the SQLite database path."),
 ) -> None:
-    """Import legacy CSV/JSON outputs as historical sessions (implemented in Phase 1)."""
-    console.print(f"[yellow]migrate: not implemented yet. Received {len(files)} file(s).[/yellow]")
+    """Import legacy CSV/JSON outputs as historical sessions."""
+    from . import migrate as migrate_mod
+
+    _apply_db(ctx, db_path)
+    conn = _connect(ctx.obj.db.path)
+    try:
+        rows = []
+        for path in files:
+            stats = migrate_mod.import_bundle(conn, ctx.obj, path, kind, sys.platform)
+            rows.append((str(path), stats["kind"], stats["imported"], stats["session_id"]))
+    finally:
+        conn.close()
+    console.print("[green]Migration complete.[/green]")
+    table = Table(title="Migrated files")
+    table.add_column("file")
+    table.add_column("kind")
+    table.add_column("imported")
+    table.add_column("session")
+    for row in rows:
+        table.add_row(row[0], row[1], str(row[2]), str(row[3]))
+    console.print(table)
 
 
 @app.command()

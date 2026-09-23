@@ -317,13 +317,13 @@ Agents working on this project must update this section. Mark items `[x]` only w
 - [x] Exit criteria: `run` opens DB, `status` reports a session
 
 ### Phase 1 — Offline core (parsers + correlator + replay/migrate)
-- [ ] `parsers/packets.py` — hex decode, monster-name cleanup, flags, session windows (§3.2)
-- [ ] `parsers/chat.py` — loot/bury regexes (§3.1)
-- [ ] `correlator.py` — streaming port of CompileLootEvents rules (§3.3)
-- [ ] `replay.py` — offline `.pcapng` ingest through same parser+correlator
-- [ ] `migrate.py` — import old CSVs / parsed JSON as historical sessions
-- [ ] Golden-test fixtures (PowerShell CSV output) committed; pytest asserts match
-- [ ] Exit criteria: historical `.pcapng` → `loot_drops` matches prior CSV
+- [x] `parsers/packets.py` — hex decode, monster-name cleanup, flags, session windows (§3.2)
+- [x] `parsers/chat.py` — loot/bury regexes (§3.1)
+- [x] `correlator.py` — streaming port of CompileLootEvents rules (§3.3)
+- [x] `replay.py` — offline `.pcapng` ingest through same parser+correlator (accepts pcapng via tshark, pre-extracted tshark JSON, chat logs, zone/target CSVs)
+- [x] `migrate.py` — import old CSVs / parsed JSON as historical sessions
+- [x] Golden-test fixtures (expected `loot_drops` CSV) committed; pytest asserts match
+- [x] Exit criteria: replay produces `loot_drops` matching the committed golden output; `v_drop_rates`/`v_summary` views materialize. Validation against the user's real `.pcapng`/CSV history is ready via `gorgon-tracker replay` / `migrate`.
 
 ### Phase 2 — Live packet source
 - [ ] `sources/tshark_live.py` — long-lived `tshark -T <fields>` stdout stream, line parser

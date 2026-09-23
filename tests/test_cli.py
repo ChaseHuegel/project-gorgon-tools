@@ -66,12 +66,50 @@ def test_stub_commands_report_pending() -> None:
         result = runner.invoke(app, [command])
         assert result.exit_code == 0, command
         assert "not implemented yet" in result.output
-    replay = runner.invoke(app, ["replay", "a.pcapng", "b.pcapng"])
-    assert replay.exit_code == 0
-    assert "Received 2 capture path(s)" in replay.output
-    migrate = runner.invoke(app, ["migrate", "out.csv"])
-    assert migrate.exit_code == 0
-    assert "Received 1 file(s)" in migrate.output
     export = runner.invoke(app, ["export", "--since", "2026-01-01"])
     assert export.exit_code == 0
     assert "not implemented yet" in export.output
+
+
+def test_replay_cli_end_to_end(tmp_path: Path) -> None:
+    from . import scenario
+
+    files = scenario.build(tmp_path)
+    db_path = str(tmp_path / "cli.db")
+    result = runner.invoke(
+        app,
+        [
+            "replay",
+            "--db",
+            db_path,
+            str(files.capture_json),
+            str(files.chat_log),
+            str(files.zones_csv),
+            str(files.targets_csv),
+        ],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert "Replay summary" in result.output
+    drops_line = [line for line in result.output.splitlines() if "drops" in line]
+    assert drops_line and "4" in drops_line[0]
+    conn = db.connect(db_path)
+    db.migrate(conn)
+    assert conn.execute("SELECT COUNT(*) c FROM loot_drops").fetchone()["c"] == 4
+    conn.close()
+
+
+def test_migrate_cli(tmp_path: Path) -> None:
+    loot_csv = tmp_path / "loot.csv"
+    loot_csv.write_text(
+        "Time,Source,ID,Activity,Item,Amount,Status,LagTime,Zone\n"
+        "2026-01-11 15:00:03,Rat,enc-a,Looting,Bone,1,Linked,0.5,Ilmari\n"
+    )
+    db_path = str(tmp_path / "cli.db")
+    result = runner.invoke(app, ["migrate", "--db", db_path, str(loot_csv)], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    assert "Migration complete" in result.output
+    conn = db.connect(db_path)
+    db.migrate(conn)
+    assert conn.execute("SELECT COUNT(*) c FROM loot_drops").fetchone()["c"] == 1
+    conn.close()

@@ -18,8 +18,12 @@ def ms_to_iso(ms: int) -> str:
     return datetime.fromtimestamp(ms / 1000, tz=UTC).isoformat()
 
 
-def iso_to_ms(value: str) -> int:
-    """Parse a timestamp string into UTC epoch milliseconds (best effort)."""
+def iso_to_ms(value: str, assume_utc: bool = False) -> int:
+    """Parse a timestamp string into UTC epoch milliseconds (best effort).
+
+    Naive timestamps are assumed local unless ``assume_utc`` is set (legacy OCR
+    output stored UTC wall-clock strings).
+    """
     value = value.strip()
     match = _MS_EPOCH_RE.match(value)
     if match:
@@ -33,6 +37,5 @@ def iso_to_ms(value: str) -> int:
 
     dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if dt.tzinfo is None:
-        # Naive: assume local time (matches historical script behavior).
-        dt = dt.astimezone()
+        dt = dt.replace(tzinfo=UTC) if assume_utc else dt.astimezone()
     return round(dt.timestamp() * 1000)
