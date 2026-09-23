@@ -22,10 +22,14 @@ Type=simple
 ExecStart=/usr/local/bin/gorgon-tracker run --config /etc/gorgon-tracker/gorgon-tracker.toml
 Restart=on-failure
 RestartSec=5
+# Point --config at your gorgon-tracker.toml (db path, chat log dir, capture iface).
+ExecStart=/usr/local/bin/gorgon-tracker run --config /etc/gorgon-tracker/gorgon-tracker.toml
+Restart=on-failure
+RestartSec=5
 KillSignal=SIGTERM
 TimeoutStopSec=20
 # Run as the desktop user so OCR screen capture and the Proton prefix are accessible.
-User=%i
+# User=<your-desktop-username>
 
 [Install]
 WantedBy=multi-user.target

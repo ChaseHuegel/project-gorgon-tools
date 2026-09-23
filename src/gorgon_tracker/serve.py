@@ -16,7 +16,7 @@ _QUERIES: dict[str, str] = {
 }
 
 
-def build_app(db_path: str, limit: int = 200) -> Any:
+def build_app(db_path: str) -> Any:
     """Create the FastAPI app (read-only); callers run uvicorn over it."""
     from fastapi import FastAPI
 

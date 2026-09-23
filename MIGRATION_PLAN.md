@@ -353,5 +353,11 @@ Agents working on this project must update this section. Mark items `[x]` only w
 - [x] Exit criteria: web browsing of loot data works off the same DB
 
 ### Cross-cutting
-- [ ] README updated for Linux setup (tshark setcap, tesseract install, Proton chat dir)
-- [ ] Set up CI (optional): pytest + mypy + ruff on push
+- [x] README updated for Linux setup (tshark setcap, tesseract install, Proton chat dir, replay/migrate/export/serve usage, systemd)
+- [x] CI workflow (`.github/workflows/ci.yml`) running ruff + mypy + pytest on 3.11/3.12/3.14
+
+### Known open items for future agents
+- [ ] Validate `replay` against the user's real historical `.pcapng` + chat logs and confirm `loot_drops` matches their prior CSV (no sample data exists in-repo; golden fixtures cover the algorithm).
+- [ ] Calibrate OCR regions for the live Proton display via `gorgon-tracker calibrate` (needs a display).
+- [ ] Consider a reorder-tolerance buffer in `Correlator` for out-of-order live events (currently correct for in-order ingestion).
+- [ ] Optional: `find-ports --write-config` to persist discovered ports back into `gorgon-tracker.toml`.
