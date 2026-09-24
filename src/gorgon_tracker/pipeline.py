@@ -75,10 +75,7 @@ def build_producers(cfg: TrackerConfig, emit: Callable[[object], None]) -> list[
     producers: list[tuple[str, Producer]] = []
 
     if cfg.capture.enabled:
-        if has_capture_ok(cfg):
-            producers.append(("packet", lambda stop: packet_source.produce(cfg, emit, stop)))
-        else:
-            logger.warning("packet capture skipped: no filter configured; run `find-ports` first")
+        producers.append(("packet", lambda stop: packet_source.produce(cfg, emit, stop)))
 
     if cfg.chat.tail:
         chat_dir = cfg.chat.log_dir

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -76,15 +77,73 @@ _PROTON_CHAT_SUFFIX = (
 _CONFIG_FILE_CANDIDATES = (Path("gorgon-tracker.toml"), Path.home() / ".config/gorgon-tracker/config.toml")
 
 
-def default_chat_log_dir() -> str:
-    """Return the first existing Proton chat-log directory found, or empty string."""
-    for base in (
-        Path.home() / ".local/share/Steam",
-        Path.home() / ".steam/steam",
-        Path.home() / ".steam/root",
-        Path.home() / "Games/Steam",
-    ):
-        candidate: Path = base / _PROTON_CHAT_SUFFIX
+def _vdf_library_paths(text: str) -> list[str]:
+    """Parse Steam's ``libraryfolders.vdf`` into its library root paths."""
+    paths: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith('"path"'):
+            continue
+        start = stripped.find('"', len('"path"'))
+        if start == -1:
+            continue
+        end = stripped.find('"', start + 1)
+        if end == -1:
+            continue
+        paths.append(stripped[start + 1 : end].replace("\\\\", "\\"))
+    return paths
+
+
+def _steam_roots(platform: str) -> list[Path]:
+    """Candidate Steam install/library roots for the given platform."""
+    if platform == "win32":
+        userprofile = os.environ.get("USERPROFILE")
+        return [Path(userprofile)] if userprofile else []
+    home = Path.home()
+    return [
+        home / ".local/share/Steam",
+        home / ".steam/steam",
+        home / ".steam/root",
+        home / "Games/Steam",
+        home / ".var/app/com.valvesoftware.Steam/.local/share/Steam",
+        home / "snap/steam/common/.local/share/Steam",
+    ]
+
+
+def default_chat_log_dir(platform: str = "auto") -> str:
+    """Return the first existing Project Gorgon chat-log directory, or empty string.
+
+    On Windows the chat logs live natively under ``%USERPROFILE%\\AppData\\LocalLow``.
+    On Linux/macOS the game runs under Proton, so we probe every Steam library root
+    (default install dirs plus any additional folders listed in
+    ``steamapps/libraryfolders.vdf``) for the compatdata prefix.
+    """
+    if platform == "auto":
+        platform = sys.platform
+
+    if platform == "win32":
+        for base in _steam_roots(platform):
+            candidate = base / "AppData/LocalLow/Elder Game/Project Gorgon/ChatLogs"
+            if candidate.is_dir():
+                return str(candidate)
+        return ""
+
+    candidates: list[Path] = []
+    for steam_root in _steam_roots(platform):
+        candidates.append(steam_root)
+        vdf = steam_root / "steamapps" / "libraryfolders.vdf"
+        if vdf.is_file():
+            for path in _vdf_library_paths(vdf.read_text(encoding="utf-8", errors="replace")):
+                if path:
+                    candidates.append(Path(path))
+
+    seen: set[Path] = set()
+    for base in candidates:
+        resolved = base.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        candidate = base / _PROTON_CHAT_SUFFIX
         if candidate.is_dir():
             return str(candidate)
     return ""

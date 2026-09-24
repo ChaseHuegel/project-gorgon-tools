@@ -12,7 +12,7 @@
 # bpf = ""                    # explicit BPF filter (wins over ports if set)
 
 # [chat]
-# log_dir = ""                # auto-detected Proton ChatLog dir when empty
+# log_dir = ""                # auto-detected ChatLog dir when empty (Windows native / Proton library folders)
 # tail = true
 # poll_interval_s = 1.0       # how often to check for appended chat lines
 # tail_from_start = false     # true = parse the whole log file on start

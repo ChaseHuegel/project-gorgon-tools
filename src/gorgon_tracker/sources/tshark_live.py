@@ -116,35 +116,49 @@ def consume_tshark_output(lines: Iterator[str]) -> Iterator[SourceEvent]:
             yield event
 
 
+DISCOVERY_RETRY_S = 2.0
+
+
 def produce(
     cfg: TrackerConfig,
     emit: Callable[[SourceEvent], None],
     stop_event: threading.Event,
 ) -> None:
-    """Run tshark until ``stop_event`` is set, decoding packets in real time."""
-    filter_expr = build_bpf_filter(cfg)
-    interface = resolve_interface(cfg)
-    args = build_tshark_args(cfg, filter_expr, interface)
-    process = subprocess.Popen(
-        args,
-        stdout=subprocess.PIPE,
-        text=True,
-        bufsize=1,
-        stderr=subprocess.DEVNULL,
-        preexec_fn=None,
-    )
-    try:
-        assert process.stdout is not None
-        for event in consume_tshark_output(iter(process.stdout.readline, "")):
-            if stop_event.is_set():
-                break
-            emit(event)
-    finally:
-        process.terminate()
+    """Run tshark until ``stop_event`` is set, decoding packets in real time.
+
+    If no capture filter is configured and the game's ports are not yet
+    discoverable (e.g. the game has not launched), this keeps retrying
+    discovery on a short interval so ports are picked up as soon as the game
+    comes online -- even mid-session.
+    """
+    while not stop_event.is_set():
         try:
-            process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            process.kill()
+            filter_expr = build_bpf_filter(cfg)
+        except RuntimeError:
+            stop_event.wait(DISCOVERY_RETRY_S)
+            continue
+        interface = resolve_interface(cfg)
+        args = build_tshark_args(cfg, filter_expr, interface)
+        process = subprocess.Popen(
+            args,
+            stdout=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+            stderr=subprocess.DEVNULL,
+            preexec_fn=None,
+        )
+        try:
+            assert process.stdout is not None
+            for event in consume_tshark_output(iter(process.stdout.readline, "")):
+                if stop_event.is_set():
+                    break
+                emit(event)
+        finally:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
 
 
 def can_run(cfg: TrackerConfig) -> bool:

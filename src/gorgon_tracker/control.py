@@ -91,7 +91,8 @@ def setup_warnings(cfg: TrackerConfig) -> list[str]:
 
     if cfg.capture.enabled and not capture_ok:
         warnings.append(
-            "Packet capture has no usable filter; run 'find-ports' or set capture.ports/bpf."
+            "Packet capture will start but can't detect the game yet; launch Project Gorgon so "
+            "its ports can be auto-discovered (capture.ports/bpf may also be set explicitly)."
         )
     if cfg.chat.tail and not chat_ok:
         warnings.append(

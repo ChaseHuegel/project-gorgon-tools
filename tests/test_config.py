@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from gorgon_tracker.config import TrackerConfig, load_config
+from gorgon_tracker.config import TrackerConfig, _vdf_library_paths, default_chat_log_dir, load_config
 
 
 def test_defaults(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -58,3 +58,55 @@ def test_legacy_output_not_picked_up_as_config(tmp_path: Path, monkeypatch: pyte
     monkeypatch.setenv("GORGON_TRACKER_CONFIG", str(tmp_path / "absent.toml"))
     with pytest.raises(FileNotFoundError):
         load_config()
+
+
+def test_vdf_library_paths() -> None:
+    text = (
+        '"libraryfolders"\n'
+        "{\n"
+        '\t"0"\n'
+        "\t{\n"
+        '\t\t"path"\t\t"/home/chase/SteamLibrary"\n'
+        '\t\t"label"\t\t""\n'
+        "\t}\n"
+        '\t"1"\n'
+        "\t{\n"
+        '\t\t"path"\t\t"C:\\\\Games\\\\Steam"\n'
+        "\t}\n"
+        "}\n"
+    )
+    assert _vdf_library_paths(text) == ["/home/chase/SteamLibrary", "C:\\Games\\Steam"]
+
+
+def test_default_chat_log_dir_windows(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    chat = tmp_path / "AppData/LocalLow/Elder Game/Project Gorgon/ChatLogs"
+    chat.mkdir(parents=True)
+    assert default_chat_log_dir(platform="win32") == str(chat)
+
+
+def test_default_chat_log_dir_proton_default(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    chat = (
+        tmp_path
+        / ".local/share/Steam"
+        / "steamapps/compatdata/342940/pfx/drive_c/users/steamuser/AppData/LocalLow/Elder Game/Project Gorgon/ChatLogs"
+    )
+    chat.mkdir(parents=True)
+    monkeypatch.setattr("gorgon_tracker.config.Path.home", lambda: tmp_path)
+    assert default_chat_log_dir(platform="linux") == str(chat)
+
+
+def test_default_chat_log_dir_discovers_vdf_library(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    steam = tmp_path / ".local/share/Steam"
+    (steam / "steamapps").mkdir(parents=True)
+    lib = tmp_path / "games" / "SteamLibrary"
+    chat = (
+        lib
+        / "steamapps/compatdata/342940/pfx/drive_c/users/steamuser/AppData/LocalLow/Elder Game/Project Gorgon/ChatLogs"
+    )
+    chat.mkdir(parents=True)
+    (steam / "steamapps" / "libraryfolders.vdf").write_text(
+        f'"libraryfolders"\n{{\n"0"\n{{\n"path"\t\t"{lib}"\n}}\n}}\n'
+    )
+    monkeypatch.setattr("gorgon_tracker.config.Path.home", lambda: tmp_path)
+    assert default_chat_log_dir(platform="linux") == str(chat)

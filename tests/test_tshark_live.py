@@ -1,3 +1,6 @@
+import threading
+import time
+
 import pytest
 
 from gorgon_tracker.config import TrackerConfig
@@ -108,3 +111,58 @@ def test_resolve_interface_explicit() -> None:
     cfg = TrackerConfig()
     cfg.capture.interface = "wlp2s0"
     assert resolve_interface(cfg) == "wlp2s0"
+
+
+class _Reader:
+    def __init__(self, lines: list[str]) -> None:
+        self._lines = list(lines)
+        self._i = 0
+
+    def readline(self) -> str:
+        if self._i >= len(self._lines):
+            return ""
+        line = self._lines[self._i]
+        self._i += 1
+        return line
+
+
+class _FakeProc:
+    def __init__(self, reader: _Reader) -> None:
+        self.stdout = reader
+
+    def terminate(self) -> None:
+        pass
+
+    def wait(self, timeout: float | None = None) -> int:
+        return 0
+
+
+def test_produce_retries_discovery_until_available(monkeypatch) -> None:
+    cfg = TrackerConfig()
+    calls = {"n": 0}
+
+    def flaky_filter(_cfg: TrackerConfig) -> str:
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise RuntimeError("no filter")
+        return "tcp.port == 999"
+
+    monkeypatch.setattr(tshark_live, "build_bpf_filter", flaky_filter)
+    monkeypatch.setattr(tshark_live, "resolve_interface", lambda _cfg: "eth0")
+    monkeypatch.setattr(tshark_live, "DISCOVERY_RETRY_S", 0.02)
+
+    payload = scenario.CAPTURE_FRAMES[0]["_source"]["layers"]["tcp"]["tcp.payload"]
+    reader = _Reader([f"1768161602.0\t{payload}\t"])
+    monkeypatch.setattr(tshark_live.subprocess, "Popen", lambda *a, **k: _FakeProc(reader))
+
+    stop = threading.Event()
+    events: list = []
+    thread = threading.Thread(target=lambda: tshark_live.produce(cfg, events.append, stop), daemon=True)
+    thread.start()
+    time.sleep(0.2)
+    stop.set()
+    thread.join(timeout=5)
+
+    assert calls["n"] >= 3  # discovery was retried until the filter became available
+    assert len(events) == 1  # the single valid line was produced once
+    assert events[0].monster == "Giant Bat"
