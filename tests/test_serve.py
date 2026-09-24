@@ -102,6 +102,17 @@ async def test_stream_resumes_after_since(tmp_path: Path) -> None:
     assert resumed == []
 
 
+def test_stream_endpoints_served_under_api_prefix(tmp_path: Path) -> None:
+    """Regression: SSE routes must live at /api/stream/* (as the SPA calls them)."""
+    app = serve.build_app(_populated(tmp_path))
+    paths = set(app.openapi()["paths"])
+
+    for path in ("/api/stream/loot", "/api/stream/events", "/api/stream/status"):
+        assert path in paths, f"{path} is not a registered route"
+
+    assert not any(p in paths for p in ("/stream/loot", "/stream/status"))
+
+
 def _id_of(frame: str) -> str:
     for line in frame.split("\n"):
         if line.startswith("id: "):

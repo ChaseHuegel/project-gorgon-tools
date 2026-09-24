@@ -101,7 +101,7 @@ def build_read_router(db_path: str, include_index: bool = True) -> tuple[APIRout
             },
         )
 
-    @router.get("/stream/loot")
+    @router.get("/api/stream/loot")
     def stream_loot(request: Request, since: int | None = None, poll_s: float | None = None) -> StreamingResponse:
         return _stream(
             stream.loot_stream(
@@ -109,7 +109,7 @@ def build_read_router(db_path: str, include_index: bool = True) -> tuple[APIRout
             )
         )
 
-    @router.get("/stream/events")
+    @router.get("/api/stream/events")
     def stream_events(request: Request, since: int | None = None, poll_s: float | None = None) -> StreamingResponse:
         return _stream(
             stream.events_stream(
@@ -117,7 +117,7 @@ def build_read_router(db_path: str, include_index: bool = True) -> tuple[APIRout
             )
         )
 
-    @router.get("/stream/status")
+    @router.get("/api/stream/status")
     def stream_status(request: Request, since: int | None = None, poll_s: float | None = None) -> StreamingResponse:
         return _stream(
             stream.status_stream(
