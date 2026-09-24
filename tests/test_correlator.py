@@ -171,3 +171,35 @@ def test_finalize_flushes_pending() -> None:
     assert len(drops) == 1
     assert drops[0].source == "Rat"
     assert drops[0].lag_ms == 0
+
+
+def test_take_drops_clears_and_streams_produced_drops() -> None:
+    c = Correlator(buffer_seconds=10.0)
+    c.ingest_source(src(0.0, "Rat"))
+    c.ingest_loot(loot(1.0, "Bone"))
+    c.ingest_source(src(2.0, "Rat"))
+    streamed = c.take_drops()
+    assert len(streamed) == 1
+    assert streamed[0].source == "Rat"
+    assert c.take_drops() == []  # already drained
+
+
+def test_flush_expired_orphans_stale_pending_without_ref_time() -> None:
+    c = Correlator(buffer_seconds=5.0)
+    c.ingest_loot(loot(0.0, "Twig"))
+    c.ingest_loot(loot(1.0, "Bone"))
+    stale = c.flush_expired(make(20.0))
+    assert len(stale) == 2
+    assert all(d.status == "Orphaned" for d in stale)
+    assert all(d.source == "Ground/Unknown" for d in stale)
+    assert c.pending == []  # cleared
+    assert c.flush_expired(make(30.0)) == []
+
+
+def test_flush_expired_keeps_recent_pending() -> None:
+    c = Correlator(buffer_seconds=10.0)
+    c.ingest_loot(loot(5.0, "Bone"))
+    c.ingest_loot(loot(19.5, "Pelt"))
+    stale = c.flush_expired(make(20.0))
+    assert [d.item for d in stale] == ["Bone"]
+    assert c.pending == [loot(19.5, "Pelt")]

@@ -24,6 +24,7 @@ from .ingest import DbWriter
 from .sources import chat_tail as chat_source
 from .sources import ocr as ocr_source
 from .sources import tshark_live as packet_source
+from .timeutil import utc_now_ms
 
 logger = logging.getLogger("gorgon_tracker.pipeline")
 
@@ -146,14 +147,26 @@ def _run_pipeline_inner(
     )
     counters: Counter[str] = Counter()
     last_status = time.monotonic()
+    last_flush = time.monotonic()
+    COMMIT_INTERVAL = 1.0
 
     while not stop_event.is_set():
+        now = time.monotonic()
+        if now - last_flush >= COMMIT_INTERVAL:
+            for drop in correlator.flush_expired(utc_now_ms()):
+                writer.drop(drop)
+                counters["loot_drop"] += 1
+            writer.commit()
+            last_flush = now
         try:
             event = work_queue.get(timeout=0.5)
         except queue.Empty:
             continue
         kind = _dispatch(event, writer, correlator)
         counters[kind] += 1
+        for drop in correlator.take_drops():
+            writer.drop(drop)
+            counters["loot_drop"] += 1
         if status_cb is not None:
             now = time.monotonic()
             if now - last_status >= 30.0:

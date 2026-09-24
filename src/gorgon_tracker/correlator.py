@@ -137,6 +137,34 @@ class Correlator:
         self.last_extract = event.can_extract
         self.last_packet_time = event.time_ms
 
+    def take_drops(self) -> list[LootDrop]:
+        """Return and clear every drop produced so far (for live streaming)."""
+        drops = list(self.drops)
+        self.drops.clear()
+        return drops
+
+    def flush_expired(self, now_ms: int) -> list[LootDrop]:
+        """Flush pending drops that failed to correlate within the buffer window.
+
+        A drop older than ``buffer_seconds`` is no longer attributable to a
+        monster encounter, so it is emitted as a lone/orphaned drop instead of
+        waiting for the stream to end.
+        """
+        cutoff = now_ms - int(self.buffer_seconds * 1000)
+        expired: list[LootEvent] = []
+        remaining: list[LootEvent] = []
+        for drop in self.pending:
+            if drop.time_ms < cutoff:
+                expired.append(drop)
+            else:
+                remaining.append(drop)
+        if not expired:
+            return []
+        produced = [self._orphan_drop(d) for d in expired]
+        self.drops.extend(produced)
+        self.pending = remaining
+        return produced
+
     def finalize(self) -> list[LootDrop]:
         """Flush any remaining pending drops (end of stream)."""
         for drop in self.pending:
@@ -177,6 +205,23 @@ class Correlator:
                 best_lag = lag
         return best_name, best_lag
 
+    def _orphan_drop(self, drop: LootEvent) -> LootDrop:
+        """Build a lone/orphaned drop using the nearest target sighting."""
+        orphan_name, orphan_lag = self._orphan_source(drop.time_ms)
+        status = "Linked" if orphan_name != GROUND else "Orphaned"
+        lag_ms = round(orphan_lag * 1000) if orphan_lag != _INF else 0
+        return LootDrop(
+            time_ms=drop.time_ms,
+            source=orphan_name,
+            encounter_uuid=str(uuid.uuid4()),
+            activity="Looting",
+            item=drop.item,
+            amount=drop.amount,
+            status=status,
+            lag_ms=lag_ms,
+            zone=self.current_zone,
+        )
+
     def _flush(
         self,
         ref_time_ms: int,
@@ -213,19 +258,5 @@ class Correlator:
                     )
                 )
             else:
-                status = "Linked" if orphan_name != GROUND else "Orphaned"
-                lag_ms = round(orphan_lag * 1000) if orphan_lag != _INF else 0
-                self.drops.append(
-                    LootDrop(
-                        time_ms=drop.time_ms,
-                        source=orphan_name,
-                        encounter_uuid=str(uuid.uuid4()),
-                        activity="Looting",
-                        item=drop.item,
-                        amount=drop.amount,
-                        status=status,
-                        lag_ms=lag_ms,
-                        zone=self.current_zone,
-                    )
-                )
+                self.drops.append(self._orphan_drop(drop))
         self.pending.clear()

@@ -71,6 +71,39 @@ def test_pipeline_chat_only_end_to_end(tmp_path: Path) -> None:
     conn.close()
 
 
+def test_pipeline_commits_drops_live_before_stop(tmp_path: Path) -> None:
+    """A bury flush must be committed so a second connection sees it pre-stop."""
+    chats = tmp_path / "chats"
+    chats.mkdir()
+    log = chats / "session.log"
+    log.write_text("garbage\n")
+
+    cfg = _live_cfg(tmp_path)
+    stop = threading.Event()
+    thread = threading.Thread(target=lambda: pipeline.run_pipeline(cfg, "linux", stop), daemon=True)
+    thread.start()
+    time.sleep(0.15)
+
+    with log.open("a") as fh:
+        fh.write(_line(1.0, "Bat Wing", 2) + "\n")
+        fh.write(f"{scenario.local_wall(1.1)} [Status] You bury the corpse.\n")
+    time.sleep(1.6)  # > the 1s commit interval so the bury-flushed drop lands
+
+    conn = db.connect(cfg.db.path)
+    db.migrate(conn)
+    live_count = conn.execute("SELECT COUNT(*) c FROM loot_drops").fetchone()["c"]
+    conn.close()
+    assert live_count == 1, "loot_drops should be committed and visible before stop"
+
+    stop.set()
+    thread.join(timeout=5)
+
+    conn = db.connect(cfg.db.path)
+    db.migrate(conn)
+    assert conn.execute("SELECT COUNT(*) c FROM loot_drops").fetchone()["c"] == 1
+    conn.close()
+
+
 def test_pipeline_reports_no_empty_producers(tmp_path: Path, monkeypatch) -> None:
     cfg = _live_cfg(tmp_path)
     emitted: list = []
