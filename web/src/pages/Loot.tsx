@@ -1,13 +1,14 @@
 import { useMemo, useRef, useState } from "react";
 import { api, exportUrl, streamUrl } from "../api/client";
 import type { LootOverride, LootRow } from "../api/types";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { DataTable, fmtTime } from "../components/DataTable";
 import { Page } from "../components/Page";
 import { useApiData } from "../hooks/useApi";
 import { useSse } from "../hooks/useSse";
 
 export default function LootPage() {
-  const { data, error, loading } = useApiData(() => api.loot(1000));
+  const { data, error, loading, reload } = useApiData(() => api.loot(1000));
   const [live, setLive] = useState<LootRow[]>([]);
   const [edits, setEdits] = useState<Record<number, LootRow>>({});
   const [monster, setMonster] = useState("");
@@ -16,6 +17,10 @@ export default function LootPage() {
   const [status, setStatus] = useState("");
   const [confidence, setConfidence] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [selected, setSelected] = useState<number[]>([]);
+  const [confirmDelete, setConfirmDelete] = useState<number[] | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const lastIdRef = useRef(0);
 
   const maxId = useMemo(() => {
@@ -72,6 +77,47 @@ export default function LootPage() {
     setEditingId(null);
   };
 
+  const toggleSelect = (id: number) =>
+    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
+  const visibleIds = useMemo(() => rows.map((r) => r.id), [rows]);
+  const allSelected = rows.length > 0 && visibleIds.every((id) => selected.includes(id));
+  const someSelected = selected.some((id) => visibleIds.includes(id));
+
+  const toggleSelectAll = () =>
+    setSelected((prev) =>
+      allSelected ? prev.filter((id) => !visibleIds.includes(id)) : [...new Set([...prev, ...visibleIds])],
+    );
+
+  const requestDelete = (ids: number[]) => {
+    setDeleteError(null);
+    setConfirmDelete(ids);
+  };
+
+  const confirmDeleteRows = async () => {
+    if (!confirmDelete || confirmDelete.length === 0) return;
+    const ids = confirmDelete;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await api.deleteLootRows(ids);
+      setLive((prev) => prev.filter((r) => !ids.includes(r.id)));
+      setEdits((prev) => {
+        const next = { ...prev };
+        ids.forEach((id) => delete next[id]);
+        return next;
+      });
+      setSelected((prev) => prev.filter((id) => !ids.includes(id)));
+      if (editingId != null && ids.includes(editingId)) setEditingId(null);
+      reload();
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDeleting(false);
+      setConfirmDelete(null);
+    }
+  };
+
   return (
     <Page
       title="Loot stream"
@@ -103,9 +149,48 @@ export default function LootPage() {
       </div>
 
       <p style={{ color: "var(--muted)" }}>{rows.length} row(s)</p>
+      <div
+        style={{
+          display: "flex",
+          gap: "0.6rem",
+          alignItems: "center",
+          marginBottom: "0.75rem",
+        }}
+      >
+        {selected.length > 0 && (
+          <button onClick={() => requestDelete(selected)} disabled={deleting} style={dangerBtnStyle}>
+            Delete selected ({selected.length})
+          </button>
+        )}
+        {deleteError && <span style={{ color: "var(--red)", fontSize: "0.85rem" }}>{deleteError}</span>}
+      </div>
       <DataTable<LootRow>
         rows={rows}
         columns={[
+          {
+            key: "select",
+            header: "",
+            headerRender: () => (
+              <input
+                type="checkbox"
+                ref={(el) => {
+                  if (el) el.indeterminate = someSelected && !allSelected;
+                }}
+                checked={allSelected}
+                onChange={toggleSelectAll}
+                title={allSelected ? "Clear selection" : "Select all"}
+                aria-label={allSelected ? "Clear selection" : "Select all visible rows"}
+              />
+            ),
+            render: (r) => (
+              <input
+                type="checkbox"
+                checked={selected.includes(r.id)}
+                onChange={() => toggleSelect(r.id)}
+                aria-label={`Select row ${r.id}`}
+              />
+            ),
+          },
           { key: "time", header: "Time", render: (r) => fmtTime(r.captured_at) },
           {
             key: "source",
@@ -140,9 +225,14 @@ export default function LootPage() {
             key: "edit",
             header: "",
             render: (r) => (
-              <button onClick={() => setEditingId(editingId === r.id ? null : r.id)} style={buttonStyle}>
-                {editingId === r.id ? "Cancel" : "Fix"}
-              </button>
+              <div style={{ display: "flex", gap: "0.35rem" }}>
+                <button onClick={() => setEditingId(editingId === r.id ? null : r.id)} style={buttonStyle}>
+                  {editingId === r.id ? "Cancel" : "Fix"}
+                </button>
+                <button onClick={() => requestDelete([r.id])} disabled={deleting} style={dangerBtnStyle}>
+                  Delete
+                </button>
+              </div>
             ),
           },
         ]}
@@ -157,6 +247,21 @@ export default function LootPage() {
           ) : null
         }
       />
+      {confirmDelete && (
+        <ConfirmDialog
+          title={confirmDelete.length === 1 ? "Delete loot row?" : `Delete ${confirmDelete.length} loot rows?`}
+          message={
+            confirmDelete.length === 1
+              ? "This permanently removes the row from the database and cannot be undone."
+              : `This permanently removes ${confirmDelete.length} selected rows from the database and cannot be undone.`
+          }
+          confirmLabel="Delete"
+          danger
+          busy={deleting}
+          onConfirm={confirmDeleteRows}
+          onCancel={() => setConfirmDelete(null)}
+        />
+      )}
     </Page>
   );
 }
@@ -307,6 +412,15 @@ const buttonStyle: React.CSSProperties = {
   border: "1px solid var(--border)",
   background: "var(--panel)",
   color: "var(--text)",
+  borderRadius: 6,
+  padding: "0.3rem 0.6rem",
+  cursor: "pointer",
+};
+
+const dangerBtnStyle: React.CSSProperties = {
+  border: "1px solid var(--red)",
+  background: "transparent",
+  color: "var(--red)",
   borderRadius: 6,
   padding: "0.3rem 0.6rem",
   cursor: "pointer",

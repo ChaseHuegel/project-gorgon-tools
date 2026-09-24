@@ -4,6 +4,7 @@ interface Column<T> {
   key: string;
   header: string;
   render: (row: T) => React.ReactNode;
+  headerRender?: () => React.ReactNode;
   align?: "left" | "right";
   sortValue?: (row: T) => string | number;
 }
@@ -66,7 +67,7 @@ export function DataTable<T>({
                   onClick={canSort ? () => toggleSort(c) : undefined}
                   title={canSort ? "Sort" : undefined}
                 >
-                  {c.header}
+                  {c.headerRender ? c.headerRender() : c.header}
                   {active && (
                     <span style={{ marginLeft: "0.3rem" }}>{sortDir === "asc" ? "▲" : "▼"}</span>
                   )}

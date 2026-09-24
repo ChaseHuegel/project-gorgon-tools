@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, exportUrl } from "../api/client";
 import type { NamesInfo } from "../api/types";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { FilePicker } from "../components/FilePicker";
 import { FormField, TextInput } from "../components/FormField";
 import { Page } from "../components/Page";
@@ -21,6 +22,8 @@ export default function ImportExportPage() {
   const [migPaths, setMigPaths] = useState<string[]>([]);
   const [kind, setKind] = useState<Kind>("loot");
   const [busy, setBusy] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
   function push(kind: string, text: string, ok = true) {
     setLog((l) => [{ kind, text, ok }, ...l].slice(0, 12));
@@ -87,6 +90,20 @@ export default function ImportExportPage() {
       push("migrate", e instanceof Error ? e.message : String(e), false);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function clearAllData() {
+    setClearing(true);
+    try {
+      const res = await api.clearData();
+      const total = Object.values(res.cleared).reduce((a, b) => a + b, 0);
+      push("clear", `Cleared ${total} rows across ${Object.keys(res.cleared).length} tables`);
+    } catch (e) {
+      push("clear", e instanceof Error ? e.message : String(e), false);
+    } finally {
+      setClearing(false);
+      setConfirmClear(false);
     }
   }
 
@@ -173,6 +190,16 @@ export default function ImportExportPage() {
         <button onClick={runMigrate} disabled={busy} style={btnStyle}>{busy ? "…" : "Run migrate"}</button>
       </Card>
 
+      <Card title="Danger zone">
+        <p style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
+          Wipe all captured data (sessions, loot drops, raw events, and the learned item-name cache).
+          This cannot be undone — consider exporting a CSV backup first.
+        </p>
+        <button onClick={() => setConfirmClear(true)} disabled={clearing} style={dangerBtn}>
+          {clearing ? "…" : "Clear all data"}
+        </button>
+      </Card>
+
       <Card title="Activity log">
         {log.length === 0 && <p style={{ color: "var(--muted)" }}>Nothing yet.</p>}
         <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
@@ -183,6 +210,18 @@ export default function ImportExportPage() {
           ))}
         </ul>
       </Card>
+
+      {confirmClear && (
+        <ConfirmDialog
+          title="Clear all data?"
+          message="This permanently deletes every captured row (sessions, loot, overrides, raw events) and the learned item-name cache. The database schema and your configuration are preserved. This cannot be undone."
+          confirmLabel="Clear all data"
+          danger
+          busy={clearing}
+          onConfirm={clearAllData}
+          onCancel={() => setConfirmClear(false)}
+        />
+      )}
     </Page>
   );
 }
@@ -216,6 +255,15 @@ const btnStyle: React.CSSProperties = {
 };
 
 const ghostBtn: React.CSSProperties = { ...btnStyle, background: "transparent", color: "var(--accent)" };
+
+const dangerBtn: React.CSSProperties = {
+  padding: "0.5rem 1rem",
+  borderRadius: 8,
+  border: "1px solid var(--red)",
+  background: "transparent",
+  color: "var(--red)",
+  cursor: "pointer",
+};
 
 const linkStyle: React.CSSProperties = {
   border: "1px solid var(--accent)",

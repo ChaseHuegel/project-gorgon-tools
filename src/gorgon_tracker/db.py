@@ -453,6 +453,43 @@ def get_loot_override(conn: sqlite3.Connection, loot_drop_id: int) -> dict[str, 
     return dict(row) if row else None
 
 
+def delete_loot_drops(conn: sqlite3.Connection, ids: list[int]) -> int:
+    """Hard-delete loot_drops rows (and their overrides), returning the count removed."""
+    ids = [int(i) for i in ids if int(i) > 0]
+    if not ids:
+        return 0
+    marks = ",".join("?" for _ in ids)
+    with conn:
+        conn.execute(f"DELETE FROM loot_overrides WHERE loot_drop_id IN ({marks})", ids)
+        cur = conn.execute(f"DELETE FROM loot_drops WHERE id IN ({marks})", ids)
+    return cur.rowcount
+
+
+def clear_all(conn: sqlite3.Connection) -> dict[str, int]:
+    """Wipe all captured data in FK-safe order, preserving schema and autoincrement reset."""
+    tables = (
+        "loot_overrides",
+        "loot_drops",
+        "corpse_searches",
+        "sources",
+        "loot",
+        "burials",
+        "target_sightings",
+        "zone_changes",
+        "encounters",
+        "raw_events",
+        "items",
+        "sessions",
+    )
+    cleared: dict[str, int] = {}
+    with conn:
+        for table in tables:
+            cleared[table] = int(conn.execute(f"DELETE FROM {table}").rowcount)
+        for table in tables:
+            conn.execute("DELETE FROM sqlite_sequence WHERE name = ?", (table,))
+    return cleared
+
+
 def status_overview(conn: sqlite3.Connection) -> dict[str, Any]:
     outcome: dict[str, Any] = {"sessions_total": 0, "open_session_id": None, "open_session_counts": None}
     outcome["sessions_total"] = int(conn.execute("SELECT COUNT(*) AS c FROM sessions").fetchone()["c"])

@@ -297,6 +297,31 @@ def build_control_router(db_path: str, config_path: str | None = None) -> APIRou
         finally:
             conn.close()
 
+    # --- data management -----------------------------------------------------
+
+    @router.post("/loot/rows/delete")
+    def delete_loot_rows(payload: dict[str, Any]) -> dict[str, int]:
+        ids = payload.get("ids")
+        if not isinstance(ids, list) or not ids or not all(isinstance(i, int) and i > 0 for i in ids):
+            raise HTTPException(status_code=422, detail="'ids' must be a non-empty list of positive integers")
+        conn = db.connect(db_path)
+        db.migrate(conn)
+        try:
+            deleted = db.delete_loot_drops(conn, ids)
+        finally:
+            conn.close()
+        return {"deleted": deleted}
+
+    @router.post("/data/clear")
+    def clear_data() -> dict[str, Any]:
+        conn = db.connect(db_path)
+        db.migrate(conn)
+        try:
+            cleared = db.clear_all(conn)
+        finally:
+            conn.close()
+        return {"ok": True, "cleared": cleared}
+
     # --- name lists ----------------------------------------------------------
 
     @router.get("/names")

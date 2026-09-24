@@ -99,6 +99,13 @@ export const api = {
     }),
   revertLoot: (id: number) =>
     request<{ ok: boolean }>(`/api/loot/${id}`, { method: "DELETE" }),
+  deleteLootRows: (ids: number[]) =>
+    request<{ deleted: number }>("/api/loot/rows/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    }),
+  clearData: () => request<{ ok: boolean; cleared: Record<string, number> }>("/api/data/clear", { method: "POST" }),
 
   distinct: () => request<DistinctValues>("/api/distinct"),
   search: (q: string) => request<SearchResults>(`/api/search${query({ q })}`),

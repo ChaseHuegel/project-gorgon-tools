@@ -191,6 +191,58 @@ def test_loot_override_validates(tmp_path: Path) -> None:
     assert empty_source.status_code == 422
 
 
+# --- loot deletion & data clear ----------------------------------------------
+
+
+def test_delete_loot_rows(tmp_path: Path) -> None:
+    conn = db.connect(str(tmp_path / "data/gorgon.db"))
+    db.migrate(conn)
+    client, drops = _replay_and_drops(tmp_path)
+
+    single = client.post("/api/loot/rows/delete", json={"ids": [drops[0]["id"]]})
+    assert single.status_code == 200, single.text
+    assert single.json() == {"deleted": 1}
+    assert conn.execute("SELECT COUNT(*) c FROM loot_drops").fetchone()["c"] == len(drops) - 1
+
+    many = client.post("/api/loot/rows/delete", json={"ids": [drops[1]["id"], drops[2]["id"]]})
+    assert many.status_code == 200
+    assert many.json() == {"deleted": 2}
+    assert conn.execute("SELECT COUNT(*) c FROM loot_drops").fetchone()["c"] == len(drops) - 3
+    conn.close()
+
+
+def test_delete_loot_rows_validates(tmp_path: Path) -> None:
+    client, drops = _replay_and_drops(tmp_path)
+    conn = db.connect(str(tmp_path / "data/gorgon.db"))
+    db.migrate(conn)
+
+    for bad in ([], ["x"], [0], [1, "a"], {}):
+        resp = client.post("/api/loot/rows/delete", json={"ids": bad})
+        assert resp.status_code == 422
+
+    assert conn.execute("SELECT COUNT(*) c FROM loot_drops").fetchone()["c"] == len(drops)
+    conn.close()
+
+
+def test_clear_data_wipes_all(tmp_path: Path) -> None:
+    client, drops = _replay_and_drops(tmp_path)
+    conn = db.connect(str(tmp_path / "data/gorgon.db"))
+    db.migrate(conn)
+    assert conn.execute("SELECT COUNT(*) c FROM loot_drops").fetchone()["c"] == len(drops)
+    assert conn.execute("SELECT COUNT(*) c FROM sessions").fetchone()["c"] >= 1
+
+    resp = client.post("/api/data/clear")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["cleared"]["loot_drops"] == len(drops)
+
+    for table in ("sessions", "raw_events", "sources", "loot", "loot_drops", "loot_overrides", "items"):
+        assert conn.execute(f"SELECT COUNT(*) c FROM {table}").fetchone()["c"] == 0
+    assert conn.execute("SELECT COUNT(*) c FROM schema_migrations").fetchone()["c"] == 3
+    conn.close()
+
+
 # --- calibration -------------------------------------------------------------
 
 

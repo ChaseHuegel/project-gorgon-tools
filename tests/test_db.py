@@ -193,6 +193,49 @@ def test_loot_override_upsert_delete(tmp_path: Path) -> None:
     conn.close()
 
 
+def test_delete_loot_drops_removes_rows_and_overrides(tmp_path: Path) -> None:
+    conn = db.connect(tmp_path / "g.db")
+    db.migrate(conn)
+    session_id = db.new_session(conn)
+    first = db.insert_loot_drop(conn, session_id, None, 1000, "Rat", "Bone", 1, "Looting", "Ilmari", "Linked", 0)
+    second = db.insert_loot_drop(conn, session_id, None, 1001, "Wolf", "Fang", 1, "Looting", "Ilmari", "Linked", 0)
+    db.upsert_loot_override(conn, first, source="Chest", status="Linked", activity="Looting")
+
+    assert db.delete_loot_drops(conn, [first]) == 1
+    assert conn.execute("SELECT COUNT(*) AS c FROM loot_drops").fetchone()["c"] == 1
+    assert conn.execute("SELECT COUNT(*) AS c FROM loot_overrides").fetchone()["c"] == 0
+
+    assert db.delete_loot_drops(conn, [second, 9999]) == 1
+    assert conn.execute("SELECT COUNT(*) AS c FROM loot_drops").fetchone()["c"] == 0
+
+    assert db.delete_loot_drops(conn, [0, -1]) == 0
+    conn.close()
+
+
+def test_clear_all_wipes_everything_but_schema(tmp_path: Path) -> None:
+    conn = db.connect(tmp_path / "g.db")
+    db.migrate(conn)
+    session_id = db.new_session(conn)
+    raw_id = db.insert_raw_event(conn, session_id, "chat", 1, {})
+    db.insert_loot(conn, session_id, raw_id, 1, "Item", 1)
+    drop_id = db.insert_loot_drop(conn, session_id, None, 1000, "Rat", "Bone", 1, "Looting", "Ilmari", "Linked", 0)
+    db.upsert_loot_override(conn, drop_id, source="Chest", status="Linked", activity="Looting")
+    db.record_item(conn, "Base", "1", "Display", 1)
+    db.insert_corpse_search(conn, session_id, raw_id, 1, 42, "Rat")
+
+    cleared = db.clear_all(conn)
+    assert cleared["loot_drops"] >= 1
+    assert cleared["sessions"] == 1
+    for table in EXPECTED_TABLES:
+        if table == "schema_migrations":
+            assert conn.execute(f"SELECT COUNT(*) AS c FROM {table}").fetchone()["c"] == 3
+        else:
+            assert conn.execute(f"SELECT COUNT(*) AS c FROM {table}").fetchone()["c"] == 0
+
+    assert db.new_session(conn) == 1  # autoincrement reset
+    conn.close()
+
+
 def test_status_overview(tmp_path: Path) -> None:
     conn = db.connect(tmp_path / "g.db")
     db.migrate(conn)
