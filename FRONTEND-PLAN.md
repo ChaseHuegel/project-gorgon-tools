@@ -192,12 +192,12 @@ Agents working on this project must update this section. Mark items `[x]` only w
 - [x] Exit criteria: endpoints verified with `TestClient`; daemon start/stop mocked without real fork (`[be]`)
 
 ### Phase 2 — Offline + calibration endpoints
-- [ ] `POST /api/ports/discover` (+ optional `write_config`) (`[be]`)
-- [ ] `POST /api/replay`, `POST /api/migrate` — multipart upload + server-path inputs (`[be]`)
-- [ ] `GET /api/export` CSV download (`[be]`)
-- [ ] `GET /api/calibrate/snapshot`, `GET /api/calibrate/preview`, `POST /api/calibrate/region` (`[be]`)
-- [ ] `GET /api/files?path=` server-side path browser (`[be]`)
-- [ ] Exit criteria: uploads land in temp dir and drive replay/migrate identically to paths (`[be]`)
+- [x] `POST /api/ports/discover` (+ optional `write_config`) (`[be]`)
+- [x] `POST /api/replay`, `POST /api/migrate` — multipart upload + server-path inputs (`[be]`)
+- [x] `GET /api/export` CSV download (`[be]`)
+- [x] `GET /api/calibrate/snapshot`, `GET /api/calibrate/preview`, `POST /api/calibrate/region` (`[be]`)
+- [x] `GET /api/files?path=` server-side path browser (`[be]`)
+- [x] Exit criteria: uploads land in temp dir and drive replay/migrate identically to paths (`[be]`)
 
 ### Phase 3 — Static serving + Vite scaffold
 - [ ] FastAPI serves `src/gorgon_tracker/static/` with SPA history fallback (`[be]`)
