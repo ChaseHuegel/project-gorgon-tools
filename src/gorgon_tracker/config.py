@@ -30,6 +30,16 @@ class ChatConfig(BaseModel):
     tail_from_start: bool = False
 
 
+class PlayerLogConfig(BaseModel):
+    """Unity ``Player.log`` tailing (authoritative loot facts, corpse attribution)."""
+
+    path: str = ""
+    tail: bool = True
+    poll_interval_s: float = 1.0
+    tail_from_start: bool = False
+    backfill_prev: bool = False
+
+
 class OcrRegionConfig(BaseModel):
     region: list[int] = Field(default_factory=lambda: [0, 0, 100, 100])
     interval_s: float = 5.0
@@ -91,6 +101,7 @@ class TrackerConfig(BaseModel):
     db: DbConfig = Field(default_factory=DbConfig)
     capture: CaptureConfig = Field(default_factory=CaptureConfig)
     chat: ChatConfig = Field(default_factory=ChatConfig)
+    playerlog: PlayerLogConfig = Field(default_factory=PlayerLogConfig)
     ocr: OcrConfig = Field(default_factory=OcrConfig)
     correlate: CorrelateConfig = Field(default_factory=CorrelateConfig)
     names: NamesConfig = Field(default_factory=NamesConfig)
@@ -100,6 +111,9 @@ _PROTON_CHAT_SUFFIX = (
     "steamapps/compatdata/342940/pfx/drive_c/users/steamuser/"
     "AppData/LocalLow/Elder Game/Project Gorgon/ChatLogs"
 )
+
+_PLAYERLOG_RELATIVE = Path("AppData/LocalLow/Elder Game/Project Gorgon/Player.log")
+_PROTON_PLAYERLOG_SUFFIX = f"steamapps/compatdata/342940/pfx/drive_c/users/steamuser/{_PLAYERLOG_RELATIVE}"
 
 _CONFIG_FILE_CANDIDATES = (Path("gorgon-tracker.toml"), Path.home() / ".config/gorgon-tracker/config.toml")
 
@@ -147,14 +161,47 @@ def default_chat_log_dir(platform: str = "auto") -> str:
     """
     if platform == "auto":
         platform = sys.platform
-
     if platform == "win32":
         for base in _steam_roots(platform):
             candidate = base / "AppData/LocalLow/Elder Game/Project Gorgon/ChatLogs"
             if candidate.is_dir():
                 return str(candidate)
         return ""
+    for base in _steam_library_candidates(platform):
+        candidate = base / _PROTON_CHAT_SUFFIX
+        if candidate.is_dir():
+            return str(candidate)
+    return ""
 
+
+def default_player_log_path(platform: str = "auto") -> str:
+    """Return the game's Unity ``Player.log`` path, or empty string when unknown.
+
+    Derived from the discovered chat-log directory when possible; otherwise the
+    standard Steam/Proton install roots are probed directly.
+    """
+    if platform == "auto":
+        platform = sys.platform
+    chat_dir = default_chat_log_dir(platform)
+    if chat_dir:
+        candidate = Path(chat_dir).parent / "Player.log"
+        if candidate.is_file():
+            return str(candidate)
+    if platform == "win32":
+        for base in _steam_roots(platform):
+            candidate = base / _PLAYERLOG_RELATIVE
+            if candidate.is_file():
+                return str(candidate)
+        return ""
+    for base in _steam_library_candidates(platform):
+        candidate = base / _PROTON_PLAYERLOG_SUFFIX
+        if candidate.is_file():
+            return str(candidate)
+    return ""
+
+
+def _steam_library_candidates(platform: str) -> list[Path]:
+    """Steam library roots plus any additional folders from libraryfolders.vdf."""
     candidates: list[Path] = []
     for steam_root in _steam_roots(platform):
         candidates.append(steam_root)
@@ -163,17 +210,15 @@ def default_chat_log_dir(platform: str = "auto") -> str:
             for path in _vdf_library_paths(vdf.read_text(encoding="utf-8", errors="replace")):
                 if path:
                     candidates.append(Path(path))
-
     seen: set[Path] = set()
+    resolved_candidates: list[Path] = []
     for base in candidates:
         resolved = base.resolve()
         if resolved in seen:
             continue
         seen.add(resolved)
-        candidate = base / _PROTON_CHAT_SUFFIX
-        if candidate.is_dir():
-            return str(candidate)
-    return ""
+        resolved_candidates.append(resolved)
+    return resolved_candidates
 
 
 def _merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
@@ -192,6 +237,9 @@ def config_from_dict(data: dict[str, Any]) -> TrackerConfig:
     chat = merged["chat"]
     if not chat.get("log_dir"):
         chat["log_dir"] = default_chat_log_dir()
+    playerlog = merged["playerlog"]
+    if not playerlog.get("path"):
+        playerlog["path"] = default_player_log_path()
     cfg = TrackerConfig.model_validate(merged)
     cfg.db.path = str(Path(cfg.db.path).expanduser().resolve())
     return cfg

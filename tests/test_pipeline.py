@@ -118,6 +118,21 @@ def test_pipeline_reports_no_empty_producers(tmp_path: Path, monkeypatch) -> Non
     assert "zone" not in names and "target" not in names  # ocr disabled
 
 
+def test_pipeline_registers_playerlog_when_path_set(tmp_path: Path) -> None:
+    cfg = TrackerConfig()
+    cfg.capture.enabled = False
+    cfg.ocr.enabled = False
+    cfg.chat.tail = False
+    cfg.playerlog.path = str(tmp_path / "Player.log")
+    cfg.playerlog.tail = True
+
+    emitted: list = []
+    names = [name for name, _ in pipeline.build_producers(cfg, emitted.append)]
+    assert "playerlog" in names
+    assert "chat" not in names
+    assert "packet" not in names
+
+
 def test_pipeline_registers_packet_when_filter_not_yet_resolvable(monkeypatch) -> None:
     cfg = TrackerConfig()
     cfg.capture.enabled = True

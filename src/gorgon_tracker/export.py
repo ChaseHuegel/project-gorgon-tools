@@ -9,7 +9,19 @@ from datetime import datetime
 from typing import TextIO
 
 _HEADER = ["Time", "Source", "ID", "Activity", "Item", "Amount", "Status", "LagTime", "Zone"]
-_EVIDENCE_HEADER = ["LinkedVia", "MonsterName", "MonsterLagMs", "TargetName", "TargetLagMs", "CorroboratedBySearch"]
+_EVIDENCE_HEADER = [
+    "LinkedVia",
+    "MonsterName",
+    "MonsterLagMs",
+    "TargetName",
+    "TargetLagMs",
+    "CorroboratedBySearch",
+    "Missed",
+    "InstanceId",
+    "EntityId",
+    "ItemCodeId",
+    "KillerJson",
+]
 
 _SQL = """
 SELECT ld.captured_at,
@@ -26,7 +38,12 @@ SELECT ld.captured_at,
        ld.monster_lag_ms,
        ld.target_name,
        ld.target_lag_ms,
-       ld.corroborated_by_search
+       ld.corroborated_by_search,
+       COALESCE(ld.missed, 0),
+       ld.instance_id,
+       ld.entity_id,
+       ld.item_code_id,
+       ld.killer_json
 FROM loot_drops ld
 LEFT JOIN encounters e ON e.id = ld.encounter_id
 LEFT JOIN loot_overrides ov ON ov.loot_drop_id = ld.id
@@ -75,6 +92,11 @@ def export_loot_csv(
                     "TargetName": row["target_name"] or "",
                     "TargetLagMs": row["target_lag_ms"] or "",
                     "CorroboratedBySearch": bool(row["corroborated_by_search"]),
+                    "Missed": bool(row["missed"]),
+                    "InstanceId": row["instance_id"] or "",
+                    "EntityId": row["entity_id"] or "",
+                    "ItemCodeId": row["item_code_id"] or "",
+                    "KillerJson": row["killer_json"] or "",
                 }
             )
         writer.writerow(entry)

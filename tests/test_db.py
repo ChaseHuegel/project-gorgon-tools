@@ -14,6 +14,8 @@ EXPECTED_TABLES = {
     "encounters",
     "loot_drops",
     "loot_overrides",
+    "corpse_searches",
+    "items",
     "schema_migrations",
 }
 
@@ -30,7 +32,7 @@ def test_connect_creates_latest_schema(tmp_path: Path) -> None:
     db.migrate(conn)
     tables = _table_names(conn)
     assert tables >= EXPECTED_TABLES
-    assert db.schema_version(conn) == 2
+    assert db.schema_version(conn) == 3
     conn.close()
 
 
@@ -39,8 +41,8 @@ def test_migrate_is_idempotent(tmp_path: Path) -> None:
     db.migrate(conn)
     db.migrate(conn)
     rows = conn.execute("SELECT COUNT(*) AS c FROM schema_migrations").fetchone()
-    assert rows["c"] == 2
-    assert db.schema_version(conn) == 2
+    assert rows["c"] == 3
+    assert db.schema_version(conn) == 3
     conn.close()
 
 
@@ -49,6 +51,14 @@ def test_migrate_upgrades_version_1_database(tmp_path: Path) -> None:
     conn = sqlite3.connect(tmp_path / "old.db")
     conn.executescript(
         """
+        CREATE TABLE loot (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            raw_event_id INTEGER,
+            captured_at INTEGER NOT NULL,
+            item TEXT NOT NULL,
+            amount INTEGER NOT NULL DEFAULT 1
+        );
         CREATE TABLE loot_drops (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             session_id INTEGER NOT NULL,
@@ -69,9 +79,21 @@ def test_migrate_upgrades_version_1_database(tmp_path: Path) -> None:
 
     conn = db.connect(tmp_path / "old.db")
     db.migrate(conn)
-    assert db.schema_version(conn) == 2
+    assert db.schema_version(conn) == 3
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(loot_drops)")}
-    assert cols >= {"linked_via", "monster_name", "monster_lag_ms", "target_name", "target_lag_ms"}
+    assert cols >= {
+        "linked_via",
+        "monster_name",
+        "monster_lag_ms",
+        "target_name",
+        "target_lag_ms",
+        "instance_id",
+        "entity_id",
+        "item_code_id",
+        "item_display",
+        "missed",
+        "killer_json",
+    }
     conn.close()
 
 
@@ -182,4 +204,23 @@ def test_status_overview(tmp_path: Path) -> None:
     assert overview["open_session_id"] == session_id
     assert overview["open_session_counts"]["loot"] == 1
     assert overview["open_session_counts"]["raw_events"] == 1
+    conn.close()
+
+
+def test_insert_corpse_search_and_item_learning(tmp_path: Path) -> None:
+    conn = db.connect(tmp_path / "g.db")
+    db.migrate(conn)
+    session_id = db.new_session(conn)
+
+    raw_id = db.insert_raw_event(conn, session_id, "unity_corpse", 1000, {"monster": "Rat"})
+    search_id = db.insert_corpse_search(
+        conn, session_id, raw_id, 1000, 42, "Rat", killer="Tester", participants={"Tester": {"health": 5, "aggro": 1.0}}
+    )
+    assert isinstance(search_id, int)
+
+    db.record_item(conn, "GoblinCallingCard", "15", "Gottak's Calling Card", 1000, inferred=False)
+    assert db.get_item_display(conn, "GoblinCallingCard", "15") == "Gottak's Calling Card"
+    db.record_item(conn, "GoblinCallingCard", "15", "Gottak's Calling Card", 2000)
+    row = conn.execute("SELECT * FROM items WHERE base_name='GoblinCallingCard'").fetchone()
+    assert row["times_seen"] == 2
     conn.close()

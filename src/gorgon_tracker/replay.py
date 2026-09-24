@@ -3,21 +3,35 @@
 from __future__ import annotations
 
 import glob
+import re
 import sqlite3
 from pathlib import Path
 from typing import Any
 
 from . import db
 from .config import TrackerConfig
-from .correlator import BuryEvent, Correlator, LootEvent, SourceEvent, TargetSighting, ZoneChange
+from .correlator import (
+    BuryEvent,
+    CorpseSearch,
+    Correlator,
+    InteractionStart,
+    ItemCode,
+    LootEvent,
+    SourceEvent,
+    TargetSighting,
+    ZoneChange,
+)
 from .ingest import DbWriter
 from .parsers import chat as chat_parser
 from .parsers import csvs as csv_parser
 from .parsers import packets as packet_parser
+from .parsers import playerlog as playerlog_parser
 
 _CAPTURE_SUFFIXES = (".pcapng", ".pcap", ".cap")
 _JSON_SUFFIXES = (".json",)
 _CHAT_SUFFIXES = (".log", ".txt")
+_PLAYERLOG_NAMES = ("Player.log", "Player-prev.log")
+_PLAYERLOG_FIRST_RE = re.compile(r"^\[\d\d:\d\d:\d\d\].*LocalPlayer: Process")
 
 
 def expand_inputs(paths: list[Path]) -> list[Path]:
@@ -32,12 +46,19 @@ def expand_inputs(paths: list[Path]) -> list[Path]:
 
 
 def _classify(path: Path) -> str:
+    if path.name in _PLAYERLOG_NAMES:
+        return "playerlog"
     suffix = path.suffix.lower()
     if suffix in _CAPTURE_SUFFIXES:
         return "pcap"
     if suffix in _JSON_SUFFIXES:
         return "json"
     if suffix in _CHAT_SUFFIXES or suffix == "":
+        # Player.log snapshots use the same `.log` suffix; sniff the header.
+        with path.open("r", encoding="utf-8-sig", errors="replace") as fh:
+            first = fh.readline()
+        if _PLAYERLOG_FIRST_RE.match(first):
+            return "playerlog"
         return "chat"
     if suffix == ".csv":
         return "csv"
@@ -73,6 +94,9 @@ def run_replay(
     bury_events: list[BuryEvent] = []
     zone_changes: list[ZoneChange] = []
     target_sightings: list[TargetSighting] = []
+    interactions: list[InteractionStart] = []
+    corpse_searches: list[CorpseSearch] = []
+    item_codes: list[ItemCode] = []
     parsed_files = 0
 
     for path in sources:
@@ -115,6 +139,18 @@ def run_replay(
                     loot_events.append(event)
                 else:
                     bury_events.append(event)
+            parsed_files += 1
+        elif kind == "playerlog":
+            for plog_event in playerlog_parser.parse_player_log_file(path):
+                _route_event(
+                    plog_event,
+                    loot_events,
+                    bury_events,
+                    zone_changes,
+                    interactions,
+                    corpse_searches,
+                    item_codes,
+                )
             parsed_files += 1
         elif kind == "csv":
             csv_path = path
@@ -159,6 +195,12 @@ def run_replay(
         timeline.append((source_evt.time_ms, 2, source_evt))
     for bury_evt in bury_events:
         timeline.append((bury_evt.time_ms, 2, bury_evt))
+    for interaction in interactions:
+        timeline.append((interaction.time_ms, 2, interaction))
+    for corpse_search in corpse_searches:
+        timeline.append((corpse_search.time_ms, 2, corpse_search))
+    for item_code in item_codes:
+        timeline.append((item_code.time_ms, 2, item_code))
     timeline.sort(key=lambda item: (item[0], item[1]))
 
     for _, _, timeline_event in timeline:
@@ -174,6 +216,15 @@ def run_replay(
         elif isinstance(timeline_event, LootEvent):
             writer.loot(timeline_event)
             correlator.ingest_loot(timeline_event)
+        elif isinstance(timeline_event, InteractionStart):
+            writer.interaction(timeline_event)
+            correlator.ingest_interaction(timeline_event)
+        elif isinstance(timeline_event, CorpseSearch):
+            writer.corpse_search(timeline_event)
+            correlator.ingest_corpse_search(timeline_event)
+        elif isinstance(timeline_event, ItemCode):
+            writer.raw_item_code(timeline_event)
+            correlator.note_item_code(timeline_event)
         else:
             assert isinstance(timeline_event, SourceEvent)
             writer.source(timeline_event)
@@ -204,3 +255,28 @@ def _read_header(path: Path) -> list[str]:
     with path.open("r", encoding="utf-8-sig", errors="replace", newline="") as fh:
         first = fh.readline()
     return [col.strip() for col in first.split(",")]
+
+
+def _route_event(
+    event: object,
+    loot_events: list[LootEvent],
+    bury_events: list[BuryEvent],
+    zone_changes: list[ZoneChange],
+    interactions: list[InteractionStart],
+    corpse_searches: list[CorpseSearch],
+    item_codes: list[ItemCode],
+) -> None:
+    if isinstance(event, (LootEvent, ZoneChange, InteractionStart, CorpseSearch, ItemCode)):
+        if isinstance(event, LootEvent):
+            loot_events.append(event)
+        elif isinstance(event, ZoneChange):
+            zone_changes.append(event)
+        elif isinstance(event, InteractionStart):
+            interactions.append(event)
+        elif isinstance(event, CorpseSearch):
+            corpse_searches.append(event)
+        else:
+            item_codes.append(event)
+    else:
+        assert isinstance(event, BuryEvent)
+        bury_events.append(event)

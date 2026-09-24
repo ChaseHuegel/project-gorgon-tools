@@ -18,7 +18,8 @@ from fastapi.concurrency import run_in_threadpool
 _LOOT_POLL_SQL = (
     "SELECT id, captured_at, source, activity, item, amount, zone, status, lag_ms,"
     " linked_via, monster_name, monster_lag_ms, target_name, target_lag_ms,"
-    " corroborated_by_search "
+    " corroborated_by_search, instance_id, entity_id, item_code_id, item_display,"
+    " missed, killer_json "
     "FROM loot_drops WHERE id > ? ORDER BY id ASC"
 )
 

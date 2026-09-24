@@ -1,6 +1,8 @@
 from gorgon_tracker.correlator import (
     BuryEvent,
+    CorpseSearch,
     Correlator,
+    InteractionStart,
     LootEvent,
     SourceEvent,
     TargetSighting,
@@ -32,6 +34,10 @@ def _run(correlator: Correlator, events) -> list:
             correlator.ingest_bury(event)
         elif kind == "source":
             correlator.ingest_source(event)
+        elif kind == "corpse":
+            correlator.ingest_corpse_search(event)
+        elif kind == "interaction":
+            correlator.ingest_interaction(event)
     return correlator.finalize()
 
 
@@ -299,3 +305,108 @@ def test_fresh_target_beats_stale_orphan_only_if_within_window() -> None:
     assert by_item["Petal"].source == "Flower"
     assert by_item["Twig"].linked_via == "orphan"
     assert by_item["Twig"].status == "Orphaned"
+
+
+# --- Unity Player.log reconciliation + corpse attribution -------------------
+
+
+def _unity(sec: float, item: str, amount=1, instance=None, missed=False) -> LootEvent:
+    return LootEvent(
+        time_ms=make(sec) - make(sec) % 1000,
+        item=item,
+        amount=amount,
+        instance_id=instance,
+        source_class="unity",
+        missed=missed,
+    )
+
+
+def test_chat_and_unity_same_second_reconcile_to_one_drop() -> None:
+    c = Correlator()
+    drops = _run(
+        c,
+        [
+            ("source", src(1.0, "Rat")),
+            ("loot", loot(2.0, "Good Armor Patch Kit")),
+            ("loot", _unity(2.0, "ArmorPatchKit3", instance=-1719914656)),
+            ("source", src(3.0, "Rat")),
+        ],
+    )
+    assert len(drops) == 1
+    drop = drops[0]
+    assert drop.amount == 1
+    assert drop.status == "Linked"
+
+
+def test_chat_quantity_wins_when_pairing_stacks() -> None:
+    c = Correlator()
+    drops = _run(
+        c,
+        [
+            ("source", src(1.0, "Hog")),
+            ("loot", loot(2.0, "Basic Reservoir Arrow", 24)),
+            ("loot", _unity(2.0, "ReservoirArrow2", instance=-1719915134)),
+            ("source", src(3.0, "Hog")),
+        ],
+    )
+    assert len(drops) == 1
+    assert drops[0].amount == 24
+
+
+def test_unity_only_pickup_infers_display_name() -> None:
+    c = Correlator()
+    drops = _run(
+        c,
+        [
+            ("source", src(1.0, "Wolf")),
+            ("loot", _unity(2.0, "StrikingBell", instance=-1726463684)),
+            ("source", src(3.0, "Wolf")),
+        ],
+    )
+    assert len(drops) == 1
+    assert drops[0].item == "Striking Bell"
+    assert drops[0].instance_id == -1726463684
+
+
+def test_corpse_search_attributes_loot_and_killer() -> None:
+    c = Correlator()
+    drops = _run(
+        c,
+        [
+            ("interaction", InteractionStart(time_ms=make(1.0), entity_id=1001)),
+            ("loot", loot(2.0, "Gottak's Calling Card")),
+            ("loot", _unity(2.0, "GoblinCallingCard15", instance=-1719916789)),
+            (
+                "corpse",
+                CorpseSearch(
+                    time_ms=make(3.0),
+                    monster="Goblin Horsebeater",
+                    entity_id=1001,
+                    killer="Mennelaia",
+                    participants={"Mennelaia": {"health": 319, "armor": 273, "aggro": 18.52}},
+                    extractions={"extracted": "Impressive Goblin Skull"},
+                ),
+            ),
+            ("bury", BuryEvent(time_ms=make(4.0))),
+        ],
+    )
+    assert len(drops) == 1
+    drop = drops[0]
+    assert drop.source == "Goblin Horsebeater"
+    assert drop.status == "Linked"
+    assert drop.killer_json is not None and "Mennelaia" in drop.killer_json
+
+
+def test_missed_loot_is_flagged_missed() -> None:
+    c = Correlator()
+    drops = _run(
+        c,
+        [
+            ("source", src(1.0, "Rat")),
+            ("loot", _unity(2.0, "Unknown", instance=-1, missed=True)),
+            ("source", src(3.0, "Rat")),
+        ],
+    )
+    assert len(drops) == 1
+    assert drops[0].status == "Missed"
+    assert drops[0].missed is True

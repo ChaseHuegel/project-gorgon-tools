@@ -3,9 +3,10 @@
 Cross-platform (Linux-first) loot and drop-rate tracker for **Project Gorgon**.
 
 This is the Python successor to the PowerShell scripts in `loot-tracker/` (kept for
-reference). It captures game data at runtime (packet inspection, chat-log tailing, and
-screen OCR), correlates encounters with the loot they drop, and persists everything to a
-single SQLite database — no post-processing, no CSV-as-database.
+reference). It captures game data at runtime (packet inspection, chat-log tailing, the
+game's Unity `Player.log`, and screen OCR), correlates encounters with the loot they
+drop, and persists everything to a single SQLite database — no post-processing, no
+CSV-as-database.
 
 Design and phase tracking: [`MIGRATION_PLAN.md`](MIGRATION_PLAN.md).
 
@@ -13,7 +14,9 @@ Design and phase tracking: [`MIGRATION_PLAN.md`](MIGRATION_PLAN.md).
 
 - One command (`run`) opens a capture session; capture happens passively in the background.
 - Sources: live packet capture via `tshark`, incremental tailing of the Proton chat log,
-  and OCR (tesseract) of the on-screen zone and target regions.
+  the game's Unity `Player.log` (authoritative inventory pickups, corpse attribution with
+  killer damage tables, missed-loot on inventory-full, and coin pickups), and OCR
+  (tesseract) of the on-screen zone and target regions.
 - Everything lands in SQLite (WAL): raw events + typed events + correlated `loot_drops`,
   grouped into sessions you can start and stop freely.
 - Offline tools: `replay` historical `.pcapng`/JSON/chat/CSV bundles, `migrate` legacy
@@ -92,7 +95,13 @@ bpf = "tcp.port == 45000 or tcp.port == 45001"
 
 [chat]
 # auto-detected when empty; set explicitly if the game is on a custom Steam library:
-# log_dir = "/mnt/games/steamapps/compatdata/1118200/pfx/drive_c/users/steamuser/AppData/LocalLow/Elder Game/Project Gorgon/ChatLogs"
+# log_dir = "/mnt/games/steamapps/compatdata/342940/pfx/drive_c/users/steamuser/AppData/LocalLow/Elder Game/Project Gorgon/ChatLogs"
+
+[playerlog]
+# Unity "Player.log" (sibling of ChatLogs) — auto-detected from the chat dir when empty.
+# Adds authoritative loot facts: instance ids, corpse entity attribution, missed loot.
+# tail = true
+# backfill_prev = false   # parse Player-prev.log once at startup (previous session)
 
 [ocr.zones]
 region = [1680, 0, 180, 50]

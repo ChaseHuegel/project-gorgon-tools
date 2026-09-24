@@ -17,6 +17,13 @@
 # poll_interval_s = 1.0       # how often to check for appended chat lines
 # tail_from_start = false     # true = parse the whole log file on start
 
+# [playerlog]
+# path = ""                   # auto-detected Unity "Player.log" (sibling of ChatLogs) when empty
+# tail = true
+# poll_interval_s = 1.0       # how often to check for appended Player.log lines
+# tail_from_start = false
+# backfill_prev = false       # parse Player-prev.log (previous session) once at startup
+
 # [ocr]
 # enabled = true
 # tesseract_path = "tesseract"

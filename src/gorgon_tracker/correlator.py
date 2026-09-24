@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import json
 import math
+import re
 import uuid
 from collections import deque
 from dataclasses import dataclass
+
+from rapidfuzz import fuzz
+
+from .itemdb import infer_display
 
 GROUND = "Ground/Unknown"
 _INF = math.inf
@@ -24,7 +30,13 @@ class SourceEvent:
 class LootEvent:
     time_ms: int
     item: str
-    amount: int
+    amount: int = 1
+    instance_id: int | None = None
+    entity_id: int | None = None
+    source_class: str = "chat"  # "chat" | "unity"
+    item_code_id: int | None = None
+    display_name: str | None = None
+    missed: bool = False
 
 
 @dataclass(frozen=True)
@@ -45,6 +57,29 @@ class ZoneChange:
 
 
 @dataclass(frozen=True)
+class InteractionStart:
+    time_ms: int
+    entity_id: int
+
+
+@dataclass(frozen=True)
+class CorpseSearch:
+    time_ms: int
+    monster: str
+    entity_id: int | None
+    killer: str | None = None
+    participants: dict[str, dict[str, int | float]] | None = None  # name -> {"health","armor","aggro"}
+    extractions: dict[str, str] | None = None  # action -> item
+
+
+@dataclass(frozen=True)
+class ItemCode:
+    time_ms: int
+    instance_id: int
+    code: int
+
+
+@dataclass(frozen=True)
 class LootDrop:
     time_ms: int
     source: str
@@ -62,6 +97,70 @@ class LootDrop:
     target_name: str | None = None
     target_lag_ms: int | None = None
     corroborated_by_search: bool = False
+    # -- unity provenance ------------------------------------------------------
+    instance_id: int | None = None
+    entity_id: int | None = None
+    item_code_id: int | None = None
+    item_display: str | None = None
+    missed: bool = False
+    killer_json: str | None = None
+
+
+@dataclass
+class _Reconciled:
+    """One loot fact after deduplicating chat/unity reports for the same pickup."""
+
+    time_ms: int
+    item: str
+    amount: int
+    source_class: str
+    instance_id: int | None
+    entity_id: int | None
+    item_code_id: int | None
+    display_name: str | None
+    missed: bool
+
+
+_TOKENS_RE = re.compile(r"[^a-z0-9]")
+
+
+def _token(name: str) -> str:
+    return _TOKENS_RE.sub("", name.lower())
+
+
+def _fuzzy_score(left: str, right: str) -> float:
+    return max(
+        fuzz.ratio(left, right),
+        fuzz.partial_ratio(left, right),
+        fuzz.token_sort_ratio(left, right),
+    )
+
+
+def _missed_copy(drop: LootDrop) -> LootDrop:
+    """Return ``drop`` with status forced to Missed (used for uncollected loot)."""
+    return LootDrop(
+        time_ms=drop.time_ms,
+        source=drop.source,
+        encounter_uuid=drop.encounter_uuid,
+        activity=drop.activity,
+        item=drop.item,
+        amount=drop.amount,
+        status="Missed",
+        lag_ms=drop.lag_ms,
+        zone=drop.zone,
+        linked_via=drop.linked_via,
+        monster_name=drop.monster_name,
+        monster_lag_ms=drop.monster_lag_ms,
+        target_name=drop.target_name,
+        target_lag_ms=drop.target_lag_ms,
+        corroborated_by_search=drop.corroborated_by_search,
+        instance_id=drop.instance_id,
+        entity_id=drop.entity_id,
+        item_code_id=drop.item_code_id,
+        item_display=drop.item_display,
+        missed=True,
+        killer_json=drop.killer_json,
+    )
 
 
 class Correlator:
@@ -81,6 +180,11 @@ class Correlator:
     * ``search_corroboration_seconds``: a target-linked drop within this many seconds
       of a same-name corpse-search packet is treated as corpse loot rather than a
       harvestable (flowers/logs/apples have no corpse-search packet).
+
+    Unity ``Player.log`` events enrich the mix: ``CorpseSearch`` names the corpse by
+    its entity id, ``InteractionStart`` opens the looting window, and loot facts from
+    chat and the Unity log are reconciled per ``(canonical item, whole second)`` so
+    the same reported pickup never double-counts.
     """
 
     def __init__(
@@ -110,6 +214,12 @@ class Correlator:
         self.last_extract = False
         self.current_zone = "Unknown"
 
+        self.current_window_entity: int | None = None
+        self.entity_monsters: dict[int, str] = {}
+        self.killer: str | None = None
+        self.participants: dict[str, dict[str, int | float]] | None = None
+        self.item_codes: dict[int, int] = {}
+
     # -- external event ingestion ------------------------------------------------
 
     def ingest_zone_change(self, change: ZoneChange) -> None:
@@ -120,6 +230,18 @@ class Correlator:
         self._prune_sightings()
 
     def ingest_loot(self, event: LootEvent) -> None:
+        if event.instance_id is not None and event.instance_id in self.item_codes:
+            event = LootEvent(
+                time_ms=event.time_ms,
+                item=event.item,
+                amount=event.amount,
+                instance_id=event.instance_id,
+                entity_id=event.entity_id,
+                source_class=event.source_class,
+                item_code_id=self.item_codes[event.instance_id],
+                display_name=event.display_name,
+                missed=event.missed,
+            )
         self.pending.append(event)
 
     def ingest_bury(self, event: BuryEvent) -> None:
@@ -158,6 +280,35 @@ class Correlator:
         self.last_extract = event.can_extract
         self.last_packet_time = event.time_ms
 
+    def ingest_interaction(self, event: InteractionStart) -> None:
+        """A new corpse-looting window opens: flush any prior window's pending loot."""
+        if self.current_monster is not None:
+            self._flush(event.time_ms)
+        self.current_window_entity = event.entity_id
+        if event.entity_id in self.entity_monsters:
+            monster = self.entity_monsters[event.entity_id]
+            if self.current_monster != monster:
+                self.current_encounter_uuid = str(uuid.uuid4())
+            self.current_monster = monster
+
+    def ingest_corpse_search(self, event: CorpseSearch) -> None:
+        """A corpse-search dialogue names the looted corpse's monster and killer."""
+        if event.entity_id is not None:
+            self.entity_monsters[event.entity_id] = event.monster
+        if event.entity_id is not None and event.entity_id != self.current_window_entity:
+            # A corpse we never opened a window for; record the mapping only.
+            return
+        self.killer = event.killer
+        self.participants = event.participants
+        if self.current_monster != event.monster:
+            self.current_encounter_uuid = str(uuid.uuid4())
+            self.current_monster = event.monster
+        self.last_packet_time = event.time_ms
+        self._flush(event.time_ms)
+
+    def note_item_code(self, event: ItemCode) -> None:
+        self.item_codes[event.instance_id] = event.code
+
     def take_drops(self) -> list[LootDrop]:
         """Return and clear every drop produced so far (for live streaming)."""
         drops = list(self.drops)
@@ -181,33 +332,49 @@ class Correlator:
                 remaining.append(drop)
         if not expired:
             return []
-        produced = [self._orphan_drop(d) for d in expired]
+        produced = [self._orphan_drop(r) for r in self._reconcile(expired)]
         self.pending = remaining
         return produced
 
     def finalize(self) -> list[LootDrop]:
         """Flush any remaining pending drops (end of stream)."""
-        for drop in self.pending:
+        for fact in self._reconcile(self.pending):
             self.drops.append(
                 LootDrop(
-                    time_ms=drop.time_ms,
+                    time_ms=fact.time_ms,
                     source=self.current_monster or GROUND,
                     encounter_uuid=self.current_encounter_uuid,
                     activity="Looting",
-                    item=drop.item,
-                    amount=drop.amount,
-                    status="Linked",
+                    item=fact.item,
+                    amount=fact.amount,
+                    status=("Linked" if self.current_monster is not None else "Missed" if fact.missed else "Linked"),
                     lag_ms=0,
                     zone=self.current_zone,
                     linked_via="monster" if self.current_monster is not None else "orphan",
                     monster_name=self.current_monster,
                     monster_lag_ms=0,
+                    instance_id=fact.instance_id,
+                    entity_id=fact.entity_id,
+                    item_code_id=fact.item_code_id,
+                    item_display=fact.display_name,
+                    missed=fact.missed,
+                    killer_json=self._killer_json() if self.current_monster is not None else None,
                 )
             )
         self.pending.clear()
         return list(self.drops)
 
     # -- internal helpers ---------------------------------------------------------
+
+    def _killer_json(self) -> str | None:
+        if not self.participants:
+            return None
+        return json.dumps({"killer": self.killer, "participants": self.participants}, sort_keys=True)
+
+    def _item_code(self, instance_id: int | None) -> int | None:
+        if instance_id is None:
+            return None
+        return self.item_codes.get(instance_id)
 
     def _prune_sightings(self) -> None:
         if not self.pending:
@@ -247,20 +414,20 @@ class Correlator:
                 best_lag = lag
         return best_name, best_lag
 
-    def _orphan_drop(self, drop: LootEvent) -> LootDrop:
+    def _orphan_drop(self, fact: _Reconciled) -> LootDrop:
         """Build a lone/orphaned drop using the nearest target sighting."""
-        orphan_name, orphan_lag = self._orphan_source(drop.time_ms)
+        orphan_name, orphan_lag = self._orphan_source(fact.time_ms)
         linked = orphan_name != GROUND
-        corroborated = linked and self._corroborated_by_search(drop.time_ms, orphan_name)
+        corroborated = linked and self._corroborated_by_search(fact.time_ms, orphan_name)
         status = "Linked" if linked else "Orphaned"
         lag_ms = round(orphan_lag * 1000) if orphan_lag != _INF else 0
         return LootDrop(
-            time_ms=drop.time_ms,
+            time_ms=fact.time_ms,
             source=orphan_name,
             encounter_uuid=str(uuid.uuid4()),
             activity="Looting" if corroborated else "Harvesting",
-            item=drop.item,
-            amount=drop.amount,
+            item=fact.item,
+            amount=fact.amount,
             status=status,
             lag_ms=lag_ms,
             zone=self.current_zone,
@@ -270,7 +437,133 @@ class Correlator:
             target_name=None if orphan_name == GROUND else orphan_name,
             target_lag_ms=None if orphan_lag == _INF else round(orphan_lag * 1000),
             corroborated_by_search=corroborated,
+            instance_id=fact.instance_id,
+            entity_id=fact.entity_id,
+            item_code_id=fact.item_code_id,
+            item_display=fact.display_name,
+            missed=fact.missed,
         )
+
+    def _reconcile(self, events: list[LootEvent]) -> list[_Reconciled]:
+        """Deduplicate chat and Unity reports of the same pickup.
+    
+        Chat and Unity facts for the same physical pickup share a whole-second
+        timestamp. Within each second bucket we pair them up (order-preserving
+        when the counts match, otherwise by fuzzy token similarity) so the
+        canonical display name and quantity from chat are joined to the Unity
+        instance/entity identity. Unmatched facts pass through unchanged.
+        """
+        if not events:
+            return []
+        buckets: dict[int, list[LootEvent]] = {}
+        for event in events:
+            buckets.setdefault(event.time_ms - event.time_ms % 1000, []).append(event)
+    
+        reconciled: list[_Reconciled] = []
+        for events_in_second in buckets.values():
+            chats = [e for e in events_in_second if e.source_class == "chat" and not e.missed]
+            unis = [e for e in events_in_second if e.source_class == "unity" and not e.missed]
+            missed = [e for e in events_in_second if e.missed]
+    
+            pairs: list[tuple[LootEvent, LootEvent]] = []
+            used_chat: set[int] = set()
+            used_uni: set[int] = set()
+    
+            # Pass 1: exact token matches.
+            for i, uni in enumerate(unis):
+                for j, chat in enumerate(chats):
+                    if j in used_chat or i in used_uni:
+                        continue
+                    if _token(uni.item) == _token(chat.item):
+                        pairs.append((chat, uni))
+                        used_chat.add(j)
+                        used_uni.add(i)
+                        break
+    
+            # Pass 2: single remaining each -> same pickup.
+            rem_uni = [i for i in range(len(unis)) if i not in used_uni]
+            rem_chat = [j for j in range(len(chats)) if j not in used_chat]
+            if len(rem_uni) == len(rem_chat) and len(rem_uni) == 1:
+                pairs.append((chats[rem_chat[0]], unis[rem_uni[0]]))
+                used_uni.add(rem_uni[0])
+                used_chat.add(rem_chat[0])
+    
+            # Pass 3: fuzzy best-match for the remainder.
+            for i in list(rem_uni):
+                best_j, best_score = None, 0.0
+                for j in rem_chat:
+                    if j in used_chat:
+                        continue
+                    score = _fuzzy_score(unis[i].item, chats[j].item)
+                    if score > best_score:
+                        best_score, best_j = score, j
+                if best_j is not None and best_score >= 85.0:
+                    pairs.append((chats[best_j], unis[i]))
+                    used_uni.add(i)
+                    used_chat.add(best_j)
+
+            rem_uni = [i for i in rem_uni if i not in used_uni]
+            rem_chat = [j for j in rem_chat if j not in used_chat]
+
+            for chat, uni in pairs:
+                reconciled.append(
+                    _Reconciled(
+                        time_ms=chat.time_ms,
+                        item=chat.item,
+                        amount=max(chat.amount, uni.amount),
+                        source_class="unity",
+                        instance_id=uni.instance_id,
+                        entity_id=uni.entity_id or chat.entity_id,
+                        item_code_id=uni.item_code_id or self._item_code(uni.instance_id),
+                        display_name=uni.item,
+                        missed=False,
+                    )
+                )
+            for j in rem_chat:
+                chat = chats[j]
+                reconciled.append(
+                    _Reconciled(
+                        time_ms=chat.time_ms,
+                        item=chat.item,
+                        amount=chat.amount,
+                        source_class="chat",
+                        instance_id=chat.instance_id,
+                        entity_id=chat.entity_id,
+                        item_code_id=chat.item_code_id,
+                        display_name=None,
+                        missed=chat.missed,
+                    )
+                )
+            for i in rem_uni:
+                uni = unis[i]
+                reconciled.append(
+                    _Reconciled(
+                        time_ms=uni.time_ms,
+                        item=infer_display(uni.item),
+                        amount=uni.amount,
+                        source_class="unity",
+                        instance_id=uni.instance_id,
+                        entity_id=uni.entity_id,
+                        item_code_id=uni.item_code_id or self._item_code(uni.instance_id),
+                        display_name=uni.item,
+                        missed=False,
+                    )
+                )
+            for event in missed:
+                reconciled.append(
+                    _Reconciled(
+                        time_ms=event.time_ms,
+                        item=event.item,
+                        amount=event.amount,
+                        source_class=event.source_class,
+                        instance_id=event.instance_id,
+                        entity_id=event.entity_id,
+                        item_code_id=event.item_code_id,
+                        display_name=event.display_name,
+                        missed=True,
+                    )
+                )
+        return reconciled
 
     def _flush(
         self,
@@ -280,12 +573,12 @@ class Correlator:
         just_extracted: bool = False,
     ) -> None:
         self._prune_sources()
-        for drop in self.pending:
+        for fact in self._reconcile(self.pending):
             if self.current_monster is not None and ref_time_ms is not None:
-                monster_lag = (ref_time_ms - drop.time_ms) / 1000.0
+                monster_lag = (ref_time_ms - fact.time_ms) / 1000.0
             else:
                 monster_lag = _INF
-            orphan_name, orphan_lag = self._orphan_source(drop.time_ms)
+            orphan_name, orphan_lag = self._orphan_source(fact.time_ms)
 
             if monster_lag <= self.buffer_seconds and monster_lag < orphan_lag:
                 activity = "Looting"
@@ -297,13 +590,13 @@ class Correlator:
                     activity = "Extracting"
                 self.drops.append(
                     LootDrop(
-                        time_ms=drop.time_ms,
+                        time_ms=fact.time_ms,
                         source=self.current_monster or GROUND,
                         encounter_uuid=self.current_encounter_uuid,
                         activity=activity,
-                        item=drop.item,
-                        amount=drop.amount,
-                        status="Linked",
+                        item=fact.item,
+                        amount=fact.amount,
+                        status="Linked" if not fact.missed else "Missed",
                         lag_ms=round(monster_lag * 1000),
                         zone=self.current_zone,
                         linked_via="monster",
@@ -311,8 +604,17 @@ class Correlator:
                         monster_lag_ms=round(monster_lag * 1000),
                         target_name=None if orphan_name == GROUND else orphan_name,
                         target_lag_ms=None if orphan_lag == _INF else round(orphan_lag * 1000),
+                        instance_id=fact.instance_id,
+                        entity_id=fact.entity_id,
+                        item_code_id=fact.item_code_id,
+                        item_display=fact.display_name,
+                        missed=fact.missed,
+                        killer_json=self._killer_json() if self.current_monster is not None else None,
                     )
                 )
             else:
-                self.drops.append(self._orphan_drop(drop))
+                drop = self._orphan_drop(fact)
+                if fact.missed:
+                    drop = _missed_copy(drop)
+                self.drops.append(drop)
         self.pending.clear()

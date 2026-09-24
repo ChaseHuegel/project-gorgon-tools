@@ -33,7 +33,43 @@ CREATE TABLE IF NOT EXISTS loot_overrides (
 );
 """
 
-MIGRATIONS: list[tuple[int, str]] = [(1, _SCHEMA_SQL), (2, _MIGRATION_V2_SQL)]
+_MIGRATION_V3_SQL = """
+ALTER TABLE loot ADD COLUMN instance_id INTEGER;
+ALTER TABLE loot ADD COLUMN entity_id INTEGER;
+ALTER TABLE loot ADD COLUMN source_class TEXT NOT NULL DEFAULT 'chat';
+
+ALTER TABLE loot_drops ADD COLUMN instance_id INTEGER;
+ALTER TABLE loot_drops ADD COLUMN entity_id INTEGER;
+ALTER TABLE loot_drops ADD COLUMN item_code_id INTEGER;
+ALTER TABLE loot_drops ADD COLUMN item_display TEXT;
+ALTER TABLE loot_drops ADD COLUMN missed INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE loot_drops ADD COLUMN killer_json TEXT;
+
+CREATE TABLE IF NOT EXISTS corpse_searches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL REFERENCES sessions(id),
+    raw_event_id INTEGER REFERENCES raw_events(id),
+    captured_at INTEGER NOT NULL,
+    entity_id INTEGER,
+    monster TEXT NOT NULL,
+    killer TEXT,
+    participants_json TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_corpse_searches_session ON corpse_searches(session_id, captured_at);
+
+CREATE TABLE IF NOT EXISTS items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    base_name TEXT NOT NULL,
+    item_code TEXT NOT NULL DEFAULT '',
+    display_name TEXT NOT NULL,
+    display_inferred INTEGER NOT NULL DEFAULT 1,
+    times_seen INTEGER NOT NULL DEFAULT 1,
+    first_seen_at INTEGER NOT NULL,
+    UNIQUE(base_name, item_code)
+);
+"""
+
+MIGRATIONS: list[tuple[int, str]] = [(1, _SCHEMA_SQL), (2, _MIGRATION_V2_SQL), (3, _MIGRATION_V3_SQL)]
 
 COUNT_TABLES = (
     "raw_events",
@@ -44,6 +80,7 @@ COUNT_TABLES = (
     "zone_changes",
     "encounters",
     "loot_drops",
+    "corpse_searches",
 )
 
 
@@ -188,7 +225,15 @@ def insert_source(
 
 
 def insert_loot(
-    conn: sqlite3.Connection, session_id: int, raw_event_id: int, captured_at: int, item: str, amount: int
+    conn: sqlite3.Connection,
+    session_id: int,
+    raw_event_id: int,
+    captured_at: int,
+    item: str,
+    amount: int,
+    instance_id: int | None = None,
+    entity_id: int | None = None,
+    source_class: str = "chat",
 ) -> int:
     return _insert(
         conn,
@@ -199,8 +244,65 @@ def insert_loot(
             "captured_at": captured_at,
             "item": item,
             "amount": amount,
+            "instance_id": instance_id,
+            "entity_id": entity_id,
+            "source_class": source_class,
         },
     )
+
+
+def insert_corpse_search(
+    conn: sqlite3.Connection,
+    session_id: int,
+    raw_event_id: int,
+    captured_at: int,
+    entity_id: int | None,
+    monster: str,
+    killer: str | None = None,
+    participants: dict[str, Any] | None = None,
+) -> int:
+    import json as _json
+
+    return _insert(
+        conn,
+        "corpse_searches",
+        {
+            "session_id": session_id,
+            "raw_event_id": raw_event_id,
+            "captured_at": captured_at,
+            "entity_id": entity_id,
+            "monster": monster,
+            "killer": killer,
+            "participants_json": _json.dumps(participants or {}),
+        },
+    )
+
+
+def record_item(
+    conn: sqlite3.Connection,
+    base_name: str,
+    item_code: str,
+    display_name: str,
+    seen_at: int,
+    inferred: bool = True,
+) -> None:
+    """Learn/count a canonical item (base + variant code) -> display mapping."""
+    if item_code:
+        sql = (
+            "INSERT INTO items (base_name, item_code, display_name, display_inferred, first_seen_at) "
+            "VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(base_name, item_code) DO UPDATE SET "
+            "times_seen = items.times_seen + 1"
+        )
+        conn.execute(sql, (base_name, item_code, display_name, int(inferred), seen_at))
+
+
+def get_item_display(conn: sqlite3.Connection, base_name: str, item_code: str) -> str | None:
+    row = conn.execute(
+        "SELECT display_name FROM items WHERE base_name = ? AND item_code = ?",
+        (base_name, item_code),
+    ).fetchone()
+    return row["display_name"] if row else None
 
 
 def insert_burial(conn: sqlite3.Connection, session_id: int, raw_event_id: int, captured_at: int) -> int:
@@ -275,6 +377,12 @@ def insert_loot_drop(
     target_name: str | None = None,
     target_lag_ms: int | None = None,
     corroborated_by_search: bool = False,
+    instance_id: int | None = None,
+    entity_id: int | None = None,
+    item_code_id: int | None = None,
+    item_display: str | None = None,
+    missed: bool = False,
+    killer_json: str | None = None,
 ) -> int:
     return _insert(
         conn,
@@ -296,6 +404,12 @@ def insert_loot_drop(
             "target_name": target_name,
             "target_lag_ms": target_lag_ms,
             "corroborated_by_search": int(corroborated_by_search),
+            "instance_id": instance_id,
+            "entity_id": entity_id,
+            "item_code_id": item_code_id,
+            "item_display": item_display,
+            "missed": int(missed),
+            "killer_json": killer_json,
         },
     )
 

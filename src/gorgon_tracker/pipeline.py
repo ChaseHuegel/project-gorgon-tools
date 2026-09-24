@@ -14,7 +14,10 @@ from . import db
 from .config import TrackerConfig
 from .correlator import (
     BuryEvent,
+    CorpseSearch,
     Correlator,
+    InteractionStart,
+    ItemCode,
     LootEvent,
     SourceEvent,
     TargetSighting,
@@ -23,6 +26,7 @@ from .correlator import (
 from .ingest import DbWriter
 from .sources import chat_tail as chat_source
 from .sources import ocr as ocr_source
+from .sources import player_log as playerlog_source
 from .sources import tshark_live as packet_source
 from .timeutil import utc_now_ms
 
@@ -60,6 +64,18 @@ def _dispatch(event: object, writer: DbWriter, correlator: Correlator) -> str:
         writer.source(event)
         correlator.ingest_source(event)
         return "source"
+    if isinstance(event, InteractionStart):
+        writer.interaction(event)
+        correlator.ingest_interaction(event)
+        return "interaction"
+    if isinstance(event, CorpseSearch):
+        writer.corpse_search(event)
+        correlator.ingest_corpse_search(event)
+        return "corpse"
+    if isinstance(event, ItemCode):
+        writer.raw_item_code(event)
+        correlator.note_item_code(event)
+        return "item_code"
     raise TypeError(f"unhandled event type: {type(event).__name__}")
 
 
@@ -84,6 +100,13 @@ def build_producers(cfg: TrackerConfig, emit: Callable[[object], None]) -> list[
             producers.append(("chat", lambda stop: chat_source.produce(cfg, emit, stop)))
         else:
             logger.warning("chat tailing skipped: no chat log directory configured/discovered")
+
+    if cfg.playerlog.tail:
+        playerlog_path = cfg.playerlog.path
+        if playerlog_path:
+            producers.append(("playerlog", lambda stop: playerlog_source.produce(cfg, emit, stop)))
+        else:
+            logger.warning("player.log tailing skipped: no Player.log path configured/discovered")
 
     if cfg.ocr.enabled:
         producers.append(("zone", lambda stop: ocr_source.produce_zones(cfg, emit, stop)))

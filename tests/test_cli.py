@@ -168,7 +168,7 @@ def test_run_live_end_to_end_via_subprocess(tmp_path: Path) -> None:
         f'[db]\npath = "{tmp_path / "live.db"}"\n'
         "[capture]\nenabled = false\n"
         "[ocr]\nenabled = false\n"
-        f"[chat]\nlog_dir = \"{chats}\"\ntail = true\n"
+        f"[chat]\nlog_dir = \"{chats}\"\ntail = true\npoll_interval_s = 0.1\n"
     )
 
     binary = Path(sys.executable).parent / "gorgon-tracker"
