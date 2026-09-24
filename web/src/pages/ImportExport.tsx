@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, exportUrl } from "../api/client";
+import type { NamesInfo } from "../api/types";
 import { FilePicker } from "../components/FilePicker";
 import { FormField, TextInput } from "../components/FormField";
 import { Page } from "../components/Page";
@@ -10,6 +11,8 @@ type Kind = "zones" | "targets" | "loot" | "chat-json" | "packets-json";
 export default function ImportExportPage() {
   const [ports, setPorts] = useState<{ found: boolean; bpf: string; persisted?: boolean } | null>(null);
   const [portBusy, setPortBusy] = useState(false);
+  const [namesInfo, setNamesInfo] = useState<NamesInfo | null>(null);
+  const [namesBusy, setNamesBusy] = useState(false);
   const [log, setLog] = useState<Array<{ kind: string; text: string; ok: boolean }>>([]);
   const [bytes, setBytes] = useState<File[]>([]);
   const [paths, setPaths] = useState<string[]>([]);
@@ -33,6 +36,26 @@ export default function ImportExportPage() {
       push("ports", e instanceof Error ? e.message : String(e), false);
     } finally {
       setPortBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    api
+      .names()
+      .then(setNamesInfo)
+      .catch(() => undefined);
+  }, []);
+
+  async function updateNames() {
+    setNamesBusy(true);
+    try {
+      const res = await api.updateNames();
+      setNamesInfo(await api.names());
+      push("names", `Updated: ${res.zones} zones, ${res.monsters} monsters -> ${res.path}`);
+    } catch (e) {
+      push("names", e instanceof Error ? e.message : String(e), false);
+    } finally {
+      setNamesBusy(false);
     }
   }
 
@@ -90,6 +113,33 @@ export default function ImportExportPage() {
             {ports.bpf && <code style={{ display: "block", marginTop: "0.4rem" }}>{ports.bpf}</code>}
           </p>
         )}
+      </Card>
+
+      <Card title="Name data">
+        <p style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
+          Canonical zone and monster names used to correct OCR reads. Fetch the latest lists from the
+          Project Gorgon wiki; the capture daemon picks up changes automatically.
+        </p>
+        {namesInfo ? (
+          <p style={{ marginTop: "0.5rem", fontSize: "0.9rem" }}>
+            <strong>{namesInfo.zones_count} zones</strong> · <strong>{namesInfo.monsters_count} monsters</strong>
+            <span style={{ color: "var(--muted)" }}> — </span>
+            {namesInfo.zones_source === "user" || namesInfo.monsters_source === "user" ? (
+              <StatusBadge ok label="user overrides" />
+            ) : (
+              <span style={{ color: "var(--muted)" }}>bundled snapshot</span>
+            )}
+            <code style={{ display: "block", marginTop: "0.4rem", fontSize: "0.8rem" }}>{namesInfo.zones_path}</code>
+            <code style={{ display: "block", marginTop: "0.15rem", fontSize: "0.8rem" }}>{namesInfo.monsters_path}</code>
+          </p>
+        ) : (
+          <p style={{ color: "var(--muted)" }}>Loading name data…</p>
+        )}
+        <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem" }}>
+          <button onClick={updateNames} disabled={namesBusy} style={btnStyle}>
+            {namesBusy ? "…" : "Update names from wiki"}
+          </button>
+        </div>
       </Card>
 
       <Card title="Replay historical captures">

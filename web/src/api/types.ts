@@ -141,3 +141,22 @@ export interface ChatTail {
   reason: string;
   lines: ChatLine[];
 }
+
+export interface NamesInfo {
+  enabled: boolean;
+  data_dir: string;
+  zones_count: number;
+  monsters_count: number;
+  zones_path: string;
+  monsters_path: string;
+  zones_source: "user" | "bundled";
+  monsters_source: "user" | "bundled";
+  zones_mtime_ms: number | null;
+  monsters_mtime_ms: number | null;
+}
+
+export interface NamesUpdateResult {
+  zones: number;
+  monsters: number;
+  path: string;
+}

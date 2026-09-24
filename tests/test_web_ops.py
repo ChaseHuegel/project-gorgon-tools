@@ -211,3 +211,51 @@ def test_files_list(tmp_path: Path) -> None:
     names = {e["name"]: e for e in resp.json()["entries"]}
     assert "a.txt" in names and names["a.txt"]["is_dir"] is False
     assert names["sub"]["is_dir"] is True
+
+
+# --- name lists --------------------------------------------------------------
+
+
+def test_names_status_reports_bundled_snapshot(tmp_path: Path) -> None:
+    resp = _client(tmp_path).get("/api/names")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["enabled"] is True
+    assert body["zones_count"] >= 10
+    assert body["monsters_count"] >= 10
+    assert body["zones_source"] in ("user", "bundled")
+    assert body["zones_path"].endswith("zones.txt")
+
+
+def test_names_update_writes_user_dir(tmp_path: Path, monkeypatch) -> None:
+    data_dir = tmp_path / "names"
+    config_file = tmp_path / "gorgon-tracker.toml"
+    config_file.write_text(f"[db]\npath = 'data/gorgon.db'\n[names]\ndata_dir = '{data_dir}'\n")
+    client = _client(tmp_path, config_file)
+
+    def fake_update(out_dir: Path):
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "zones.txt").write_text("Serbule\n", encoding="utf-8")
+        (out_dir / "monsters.txt").write_text("Wolf\n", encoding="utf-8")
+        return {"zones": 1, "monsters": 1, "path": str(out_dir)}
+
+    monkeypatch.setattr("gorgon_tracker.names.update_names_files", fake_update)
+    resp = client.post("/api/names/update")
+    assert resp.status_code == 200
+    assert resp.json() == {"zones": 1, "monsters": 1, "path": str(data_dir)}
+
+    info = client.get("/api/names").json()
+    assert info["zones_source"] == "user"
+    assert info["zones_count"] == 1
+
+
+def test_names_update_surfaces_fetch_failure(tmp_path: Path, monkeypatch) -> None:
+    from urllib.error import URLError
+
+    def boom(out_dir: Path):
+        raise URLError("connection refused")
+
+    monkeypatch.setattr("gorgon_tracker.names.update_names_files", boom)
+    resp = _client(tmp_path).post("/api/names/update")
+    assert resp.status_code == 502
+    assert "wiki name fetch failed" in resp.json()["detail"]

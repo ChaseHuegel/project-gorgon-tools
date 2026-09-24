@@ -265,6 +265,22 @@ def migrate(
 
 
 @app.command()
+def update_names(
+    ctx: typer.Context,
+    to: Path | None = typer.Option(  # noqa: B008 - required by typer
+        None, "--to", help="Write name lists into this directory instead of the user data dir."
+    ),
+) -> None:
+    """Fetch the latest zone/monster name lists from the Project Gorgon wiki."""
+    from . import names as names_mod
+
+    out_dir = to.expanduser() if to else names_mod.default_names_dir()
+    stats = names_mod.update_names_files(out_dir)
+    console.print(f"[green]Updated:[/green] {stats['zones']} zones, {stats['monsters']} monsters")
+    console.print(f"  {stats['path']}")
+
+
+@app.command()
 def export(
     ctx: typer.Context,
     since: str | None = typer.Option(None, help="Only export loot_drops at or after this ISO time."),

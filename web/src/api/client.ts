@@ -5,6 +5,8 @@ import type {
   DropRateRow,
   LootRow,
   MigrateResult,
+  NamesInfo,
+  NamesUpdateResult,
   PortsDiscover,
   ReplayResult,
   Session,
@@ -61,6 +63,9 @@ export const api = {
 
   daemonStart: () => request<DaemonInfo>("/api/daemon/start", { method: "POST" }),
   daemonStop: () => request<DaemonInfo>("/api/daemon/stop", { method: "POST" }),
+
+  names: () => request<NamesInfo>("/api/names"),
+  updateNames: () => request<NamesUpdateResult>("/api/names/update", { method: "POST" }),
 
   discoverPorts: (writeConfig = false) =>
     request<PortsDiscover>("/api/ports/discover", {

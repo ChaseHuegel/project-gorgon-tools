@@ -61,12 +61,32 @@ class CorrelateConfig(BaseModel):
     retroactive_threshold: float = 0.9
 
 
+class NamesKindConfig(BaseModel):
+    ratio: float = 90.0
+    partial_ratio: float = 85.0
+
+    @field_validator("ratio", "partial_ratio")
+    @classmethod
+    def _ratio_percent(cls, v: float) -> float:
+        if not 0 < v <= 100:
+            raise ValueError("ratio must be a percentage in (0, 100]")
+        return v
+
+
+class NamesConfig(BaseModel):
+    enabled: bool = True
+    data_dir: str = ""
+    zones: NamesKindConfig = Field(default_factory=NamesKindConfig)
+    monsters: NamesKindConfig = Field(default_factory=NamesKindConfig)
+
+
 class TrackerConfig(BaseModel):
     db: DbConfig = Field(default_factory=DbConfig)
     capture: CaptureConfig = Field(default_factory=CaptureConfig)
     chat: ChatConfig = Field(default_factory=ChatConfig)
     ocr: OcrConfig = Field(default_factory=OcrConfig)
     correlate: CorrelateConfig = Field(default_factory=CorrelateConfig)
+    names: NamesConfig = Field(default_factory=NamesConfig)
 
 
 _PROTON_CHAT_SUFFIX = (

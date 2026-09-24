@@ -19,6 +19,8 @@ web/dist/
 
 # Runtime data
 data/
+!src/gorgon_tracker/data/
+!src/gorgon_tracker/data/*.txt
 *.db
 *.db-wal
 *.db-shm

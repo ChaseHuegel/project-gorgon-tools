@@ -98,6 +98,39 @@ region = [1680, 0, 180, 50]
 region = [1021, 691, 213, 114]
 ```
 
+### Name correction
+
+OCR reads of zone and monster names are corrected against canonical lists of
+known Project Gorgon names. The lists ship with the package (fetched from the
+[Project Gorgon wiki](https://wiki.projectgorgon.com)) and can be refreshed:
+
+```sh
+# Fetch the latest zone/monster name lists from the wiki into the user data dir:
+gorgon-tracker update-names
+```
+
+The web UI has an **Update names from wiki** button on the Import / Export page.
+A running capture daemon picks up refreshed lists automatically. Correction is
+conservative: text is only rewritten on a high-confidence fuzzy match, and
+near-ties are left untouched. Override or extend the lists by dropping
+`zones.txt` / `monsters.txt` (one name per line, `#` comments allowed) into the
+user data dir (`~/.local/share/gorgon-tracker/names`), or point `[names] data_dir`
+at your own directory:
+
+```toml
+[names]
+enabled = true
+# data_dir = "/path/to/my/name/lists"
+
+[names.zones]        # fuzzy thresholds in percent (0-100)
+ratio = 90.0
+partial_ratio = 85.0
+
+[names.monsters]
+ratio = 90.0
+partial_ratio = 85.0
+```
+
 ### Migrating historical data
 
 ```sh

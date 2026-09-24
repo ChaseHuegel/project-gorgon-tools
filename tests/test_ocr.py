@@ -308,9 +308,10 @@ def test_portal_grab_reports_status(tmp_path, monkeypatch) -> None:
         ocr._portal_grab_full()
 
 
-def _emit_sequences(monkeypatch, cfg, producer) -> list:
+def _emit_sequences(monkeypatch, cfg, producer, script=None) -> list:
     """Drive a producer with a scripted sequence of OCR reads."""
-    script = ["Ilmari Island", "Ilmari Island", "Elmet", "Elmet"]
+    if script is None:
+        script = ["Ilmari Island", "Ilmari Island", "Elmet", "Elmet"]
     calls = {"index": 0}
 
     def fake_capture(cfg_, region):
@@ -323,10 +324,16 @@ def _emit_sequences(monkeypatch, cfg, producer) -> list:
 
     collected = []
     stop = threading.Event()
+    correct = ocr_sources._make_corrector(cfg, "monsters")
 
     def runner():
         ocr_sources.produce_region(
-            cfg, cfg.ocr.targets, lambda t, n: TargetSighting(time_ms=n, name=t), collected.append, stop
+            cfg,
+            cfg.ocr.targets,
+            lambda t, n: TargetSighting(time_ms=n, name=t),
+            collected.append,
+            stop,
+            correct=correct,
         )
 
     thread = threading.Thread(target=runner, daemon=True)
@@ -340,6 +347,7 @@ def _emit_sequences(monkeypatch, cfg, producer) -> list:
 def test_produce_targets_change_detection(monkeypatch) -> None:
     cfg = TrackerConfig()
     cfg.ocr.targets.interval_s = 0.02
+    cfg.names.enabled = False  # keep change detection independent of name correction
     seen = _emit_sequences(monkeypatch, cfg, None)
     # Change detection only: 'Ilmari Island' once, 'Elmet' once, duplicates skipped.
     assert seen == [("TargetSighting", "Ilmari Island"), ("TargetSighting", "Elmet")]
@@ -349,6 +357,7 @@ def test_produce_zones_change_and_heartbeat(monkeypatch) -> None:
     cfg = TrackerConfig()
     cfg.ocr.zones.interval_s = 0.02
     cfg.ocr.zones.heartbeat_s = 0.1
+    cfg.names.enabled = False  # keep change detection independent of name correction
 
     script = ["Old Graveyard", "Old Graveyard"]
     calls = {"index": 0}
@@ -382,6 +391,7 @@ def test_produce_zones_change_and_heartbeat(monkeypatch) -> None:
 def test_produce_skips_screen_capture_errors(monkeypatch) -> None:
     cfg = TrackerConfig()
     cfg.ocr.targets.interval_s = 0.02
+    cfg.names.enabled = False
 
     def fake_capture(cfg_, region):
         raise ocr.ScreenCaptureError("no display")
@@ -401,6 +411,18 @@ def test_produce_skips_screen_capture_errors(monkeypatch) -> None:
     stop.set()
     thread.join(timeout=3)
     assert collected == []
+
+
+def test_produce_applies_name_correction(monkeypatch) -> None:
+    cfg = TrackerConfig()
+    cfg.ocr.targets.interval_s = 0.02
+    monkeypatch.setattr(
+        ocr_sources,
+        "_make_corrector",
+        lambda cfg_, kind: (lambda t: "Giant Bat" if t == "Giant Fat" else t),
+    )
+    seen = _emit_sequences(monkeypatch, cfg, None, script=["Giant Fat", "Giant Fat"])
+    assert seen == [("TargetSighting", "Giant Bat")]
 
 
 def test_parse_region() -> None:

@@ -54,6 +54,7 @@ def build_control_router(db_path: str, config_path: str | None = None) -> APIRou
     """Control endpoints for configuring, running/stopping the capture daemon."""
     from . import export as export_mod
     from . import migrate as migrate_mod
+    from . import names as names_mod
     from . import ports as ports_mod
     from . import replay as replay_mod
 
@@ -233,6 +234,23 @@ def build_control_router(db_path: str, config_path: str | None = None) -> APIRou
             media_type="text/csv",
             headers={"Content-Disposition": 'attachment; filename="gorgon-loot.csv"'},
         )
+
+    # --- name lists ----------------------------------------------------------
+
+    @router.get("/names")
+    def names_status() -> dict[str, Any]:
+        return names_mod.names_info(_cfg().names)
+
+    @router.post("/names/update")
+    def names_update() -> dict[str, Any]:
+        from urllib.error import URLError
+
+        cfg = _cfg()
+        out_dir = Path(cfg.names.data_dir) if cfg.names.data_dir else names_mod.default_names_dir()
+        try:
+            return names_mod.update_names_files(out_dir)
+        except (URLError, OSError, ValueError) as exc:
+            raise HTTPException(status_code=502, detail=f"wiki name fetch failed: {exc}") from exc
 
     # --- calibration --------------------------------------------------------
 
