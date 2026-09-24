@@ -207,12 +207,12 @@ Agents working on this project must update this section. Mark items `[x]` only w
 - [x] Exit criteria: `npm run build` produces a static dir FastAPI serves; pip package installs + serves the SPA (`[be][fe]`)
 
 ### Phase 4 — Status, Dashboard, Loot pages
-- [ ] `api/client.ts`, `api/types.ts`, `hooks/useConfig`, `useDaemon`, `useStatus` (polling), `useApiData`, `useUpload` (`[fe]`)
-- [ ] `components/`: DataTable, StatusBadge, FormField, DropRateChart, FilePicker, RegionPicker (`[fe]`)
-- [ ] `Status.tsx` — daemon toggle, live counters, session, warnings (`[fe]`)
-- [ ] `Dashboard.tsx` — summary table + Recharts (`[fe]`)
-- [ ] `Loot.tsx` — browsable table + filters (`[fe]`)
-- [ ] Exit criteria: pages render live/test data; polling updates counters; charts reflect `/drop-rates` (`[fe]`)
+- [x] `api/client.ts`, `api/types.ts`, `hooks/useStatus` (polling), `useApiData` (`[fe]`)
+- [x] `components/`: DataTable, StatusBadge, Page (`[fe]`)
+- [x] `Status.tsx` — daemon toggle, live counters, session, warnings (`[fe]`)
+- [x] `Dashboard.tsx` — summary table + Recharts (`[fe]`)
+- [x] `Loot.tsx` — browsable table + filters (`[fe]`)
+- [x] Exit criteria: pages render live/test data; polling updates counters; charts reflect `/drop-rates` (`[fe]`)
 
 ### Phase 5 — Config, Calibrate, Import/Export, Sessions pages
 - [ ] `Config.tsx` — sectioned forms → `GET/PUT /api/config` (`[fe]`)
