@@ -69,7 +69,7 @@ class TrackerConfig(BaseModel):
 
 
 _PROTON_CHAT_SUFFIX = (
-    "steamapps/compatdata/1118200/pfx/drive_c/users/steamuser/"
+    "steamapps/compatdata/342940/pfx/drive_c/users/steamuser/"
     "AppData/LocalLow/Elder Game/Project Gorgon/ChatLogs"
 )
 
