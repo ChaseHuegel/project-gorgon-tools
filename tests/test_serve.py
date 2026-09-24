@@ -90,6 +90,19 @@ def test_analysis_endpoints_and_filters(tmp_path: Path) -> None:
     items = client.get("/api/analysis/items").json()
     assert any(i["item"] == "Bat Guano" for i in items)
 
+    zoned_sources = client.get(
+        "/api/analysis/sources", params={"zone": "Old Graveyard", "status": "Linked"}
+    ).json()
+    assert zoned_sources and all(m["monster"] == "Giant Bat" for m in zoned_sources)
+    zoned_items = client.get(
+        "/api/analysis/items", params={"zone": "Fairy Glen", "item": "Ground Twig", "status": "Linked"}
+    ).json()
+    assert zoned_items and all(i["item"] == "Ground Twig" for i in zoned_items)
+    filtered_zones = client.get(
+        "/api/analysis/zones", params={"source": "Dire Wolf", "status": "Linked"}
+    ).json()
+    assert filtered_zones and any(z["zone"] == "Fairy Glen" for z in filtered_zones)
+
     zoned = client.get("/api/drop-rates", params={"zone": "Old Graveyard"}).json()
     assert zoned and all(r["monster"] == "Giant Bat" for r in zoned)
     ranked = client.get("/api/drop-rates", params={"sort": "drops", "order": "desc", "limit": 2}).json()

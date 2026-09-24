@@ -378,7 +378,7 @@ def build_read_router(db_path: str, include_index: bool = True) -> tuple[APIRout
         if status:
             status_clause = "ld.status = ?"
             where = where + " AND " + status_clause if where else "WHERE " + status_clause
-            params.insert(0, status)
+            params.append(status)
         encounters = "COUNT(DISTINCT ld.encounter_id)"
         rate = f"ROUND(CAST(COUNT(*) AS REAL) / NULLIF({encounters}, 0), 4)"
         rows = db.rows(
@@ -402,7 +402,7 @@ def build_read_router(db_path: str, include_index: bool = True) -> tuple[APIRout
         if status:
             status_clause = "ld.status = ?"
             where = where + " AND " + status_clause if where else "WHERE " + status_clause
-            params.insert(0, status)
+            params.append(status)
         rows = db.rows(
             f"SELECT ld.zone, COUNT(*) AS drops, COUNT(DISTINCT ld.source) AS sources FROM loot_drops ld "
             f"{where} GROUP BY ld.zone ORDER BY drops DESC LIMIT ?",
@@ -413,16 +413,17 @@ def build_read_router(db_path: str, include_index: bool = True) -> tuple[APIRout
     @router.get("/api/analysis/items")
     def analysis_items(
         source: str | None = None,
+        item: str | None = None,
         zone: str | None = None,
         activity: str | None = None,
         status: str | None = "Linked",
         limit: int = 50,
     ) -> list[dict[str, Any]]:
-        where, params = _axis_filter(source, None, zone, activity)
+        where, params = _axis_filter(source, item, zone, activity)
         if status:
             status_clause = "ld.status = ?"
             where = where + " AND " + status_clause if where else "WHERE " + status_clause
-            params.insert(0, status)
+            params.append(status)
         rows = db.rows(
             f"SELECT ld.item, COUNT(*) AS drops, COUNT(DISTINCT ld.source) AS sources FROM loot_drops ld "
             f"{where} GROUP BY ld.item ORDER BY drops DESC LIMIT ?",
