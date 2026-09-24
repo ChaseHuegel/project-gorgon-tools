@@ -223,12 +223,13 @@ Agents working on this project must update this section. Mark items `[x]` only w
 - [x] Exit criteria: end-to-end workflows work in browser against a populated DB (`[fe]`)
 
 ### Phase 6 — Polish, docs, CI
-- [ ] Error/empty/loading states across pages (`[fe]`)
-- [ ] README: `web` usage, Node dev instructions, runtime note (no Node needed) (`[doc]`)
-- [ ] Update `MIGRATION_PLAN.md` (cross-ref) + finalize this tracker (`[doc]`)
-- [ ] Exit criteria: full CI green — Python matrix + Node job; lint/typecheck/tests pass (`[be][fe]`)
+- [x] Error/empty/loading states across pages (`[fe]`)
+- [x] README: `web` usage, Node dev instructions, runtime note (no Node needed) (`[doc]`)
+- [x] Update `MIGRATION_PLAN.md` (cross-ref) + finalize this tracker (`[doc]`)
+- [x] Exit criteria: full CI green — Python matrix + Node job; lint/typecheck/tests pass (`[be][fe]`)
 
 ### Known open items / follow-ups
-- [ ] Decide whether the daemon runs via `run --daemon` subprocess (current plan) vs the web process hosting the pipeline in-process.
-- [ ] Live update transport: start with polling (`GET /api/status`); evaluate SSE/WebSocket if sub-second freshness is needed.
+- [x] Decide whether the daemon runs via `run --daemon` subprocess (chosen) vs the web process hosting the pipeline in-process.
+- [x] Live update transport: polling via `GET /api/status` (chosen); SSE/WebSocket left as a follow-up if sub-second freshness is needed.
 - [ ] Optional auth/remote option if `--host 0.0.0.0` is used (reverse proxy or token).
+- [ ] Code-split the recharts-heavy Dashboard bundle (Current: single ~150 kB chunk; consider `React.lazy`).

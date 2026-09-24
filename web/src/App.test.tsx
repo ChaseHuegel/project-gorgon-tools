@@ -1,11 +1,11 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import App from "./App";
 
 describe("App", () => {
-  it("renders the heading", () => {
-    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("no api"));
+  it("renders the index of navigation links", () => {
     render(<App />);
-    expect(screen.getByRole("heading", { name: /gorgon-tracker/i })).toBeInTheDocument();
+    expect(screen.getAllByText("gorgon-tracker").length).toBeGreaterThan(0);
+    expect(screen.getByText("Status")).toBeInTheDocument();
   });
 });

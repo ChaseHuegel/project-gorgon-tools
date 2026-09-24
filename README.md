@@ -53,7 +53,27 @@ gorgon-tracker run                    # capture in the foreground; Ctrl-C to sto
 gorgon-tracker run --daemon           # background; stop with `gorgon-tracker stop`
 gorgon-tracker status                 # sessions + per-source event counts
 gorgon-tracker serve                  # read-only API at http://127.0.0.1:8000
+gorgon-tracker web                    # full browser UI at http://127.0.0.1:8000
 ```
+
+### Web UI
+
+`gorgon-tracker web` opens a browser UI that configures the tool, starts/stops the
+capture daemon, and lets you browse loot data — no terminal needed for everyday use:
+
+- **Status** — start/stop the daemon, live per-source event counts, setup warnings.
+- **Dashboard** — drop-rate charts and summary tables (via Recharts).
+- **Loot** — filter a stream of correlated drops; export to the legacy CSV.
+- **Sessions** — browse capture sessions and their timing.
+- **Config** — edit `gorgon-tracker.toml` from forms (only changed keys are written,
+  so comments and formatting survive).
+- **Calibrate** — drag a region on a live snapshot to tune OCR zones/targets.
+- **Import / Export** — find ports, and replay/migrate historical captures by file
+  upload or server path.
+
+The UI is a Vite/React bundle that ships inside the pip package, so nothing extra is
+needed at runtime (`--host --port --config --db` and OCR/capture prerequisites apply
+as documented below).
 
 Create a `gorgon-tracker.toml` (see the sample in this repo) to set your Steam library's
 chat log path automatically; the default probes common paths:
@@ -104,4 +124,18 @@ pip install -e ".[dev,serve]"
 pytest
 ruff check src tests
 mypy src/gorgon_tracker
+```
+
+### Frontend (Node)
+
+The `web/` SPA is optional to develop — the built bundle already ships in the package
+(`src/gorgon_tracker/static`). If you want to work on the UI, install Node 20/22:
+
+```sh
+cd web
+npm install
+npm run dev        # Vite dev server, proxies /api to a running `gorgon-tracker web/serve` (or `BACKEND=` to point elsewhere)
+npm run typecheck  # tsc --noEmit
+npm run test       # vitest
+npm run build      # bundles into ../src/gorgon_tracker/static, served by FastAPI
 ```

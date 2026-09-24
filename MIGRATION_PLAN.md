@@ -2,6 +2,8 @@
 
 Persistent development plan for evolving the PowerShell loot-collection scripts into a single-entrypoint, cross-platform (Linux-first) background tool that writes directly to SQLite.
 
+Web UI that configures/runs/browses this tool is tracked separately in [`FRONTEND-PLAN.md`](FRONTEND-PLAN.md).
+
 **Status legend:** `[ ]` = not started, `[/]` = in progress, `[x]` = done. Agents must update the tracker section ("Development Tracker") at the bottom of this file as work progresses.
 
 ---
@@ -299,6 +301,7 @@ Phase 1 is intentionally first after scaffolding: it de-risks the correlator por
 ## 10. Future (out of current scope, keep in mind for design)
 
 - Web frontend (FastAPI/read-only or full UI) browsing drop rates per monster/item/zone.
+  **Done**: the full UI ships as the `web` command; see [`FRONTEND-PLAN.md`](FRONTEND-PLAN.md).
 - Export to Google Sheets (e.g., `gspread`) as an optional push rather than primary store.
 - Stats/aggregation dashboards, backup/restore of the SQLite DB, multi-machine capture merging.
 
