@@ -126,19 +126,43 @@ def test_export_csv(tmp_path: Path) -> None:
 
 
 def test_calibrate_snapshot_and_preview(tmp_path: Path, monkeypatch) -> None:
+    import io
+
     import gorgon_tracker.parsers.ocr as ocr_mod
 
     monkeypatch.setattr(ocr_mod, "grab_region", lambda region: Image.new("RGB", (20, 10), color=(120, 90, 60)))
-    monkeypatch.setattr(ocr_mod, "capture_text", lambda cfg, region: "Fairy Glen")
+    monkeypatch.setattr(ocr_mod, "raw_capture_text", lambda cfg, region: "Fairy Glen\n42\n")
     client = _client(tmp_path)
 
-    snap = client.get("/api/calibrate/snapshot", params={"x": 0, "y": 0, "w": 20, "h": 10})
-    assert snap.status_code == 200
-    assert snap.headers["content-type"] == "image/png"
-    assert snap.content[:8] == b"\x89PNG\r\n\x1a\n"
+    snap_gray = client.get("/api/calibrate/snapshot", params={"x": 0, "y": 0, "w": 20, "h": 10})
+    assert snap_gray.status_code == 200
+    assert snap_gray.headers["content-type"] == "image/png"
+    assert snap_gray.content[:8] == b"\x89PNG\r\n\x1a\n"
+    assert Image.open(io.BytesIO(snap_gray.content)).mode == "L"
+
+    snap_color = client.get("/api/calibrate/snapshot", params={"x": 0, "y": 0, "w": 20, "h": 10, "color": 1})
+    assert snap_color.status_code == 200
+    assert Image.open(io.BytesIO(snap_color.content)).mode == "RGB"
 
     prev = client.get("/api/calibrate/preview", params={"x": 0, "y": 0, "w": 20, "h": 10})
-    assert prev.json() == {"text": "Fairy Glen"}
+    assert prev.json() == {"text": "Fairy Glen", "raw": "Fairy Glen 42"}
+
+
+def test_calibrate_screens_lists_monitors(tmp_path: Path, monkeypatch) -> None:
+    import gorgon_tracker.parsers.ocr as ocr_mod
+
+    monkeypatch.setattr(
+        ocr_mod,
+        "list_monitors",
+        lambda: [
+            {"left": 0, "top": 0, "width": 3840, "height": 1080},
+            {"left": 0, "top": 0, "width": 1920, "height": 1080},
+            {"left": 1920, "top": 0, "width": 1920, "height": 1080},
+        ],
+    )
+    resp = _client(tmp_path).get("/api/calibrate/screens")
+    assert resp.status_code == 200
+    assert resp.json()["monitors"][1] == {"left": 0, "top": 0, "width": 1920, "height": 1080}
 
 
 def test_calibrate_region_persists(tmp_path: Path, monkeypatch) -> None:

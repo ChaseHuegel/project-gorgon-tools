@@ -27,6 +27,12 @@ def grab_region(region: Sequence[int]) -> Image.Image:
         return Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
 
 
+def list_monitors() -> list[dict[str, int]]:
+    """Return mss monitor bounds; index 0 is the combined virtual screen."""
+    with mss.mss() as monitor:
+        return [dict(m) for m in monitor.monitors]
+
+
 def ocr_image(image: Image.Image, tesseract_cmd: str, lang: str) -> str:
     """Run tesseract over a (preprocessed) image and return raw text."""
     pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
@@ -39,5 +45,10 @@ def sanitize_text(text: str) -> str:
 
 
 def capture_text(cfg: TrackerConfig, region: Sequence[int]) -> str:
-    """Grab + preprocess + OCR + sanitize a screen region into clean text."""
-    return sanitize_text(ocr_image(grayscale(grab_region(region)), cfg.ocr.tesseract_path, cfg.ocr.lang))
+    """Grab + preprocess + OCR a screen region into clean text."""
+    return sanitize_text(raw_capture_text(cfg, region))
+
+
+def raw_capture_text(cfg: TrackerConfig, region: Sequence[int]) -> str:
+    """Grab + preprocess + OCR a screen region, returning raw tesseract output."""
+    return ocr_image(grayscale(grab_region(region)), cfg.ocr.tesseract_path, cfg.ocr.lang)

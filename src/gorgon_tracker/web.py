@@ -181,11 +181,19 @@ def build_control_router(db_path: str, config_path: str | None = None) -> APIRou
 
     # --- calibration --------------------------------------------------------
 
-    @router.get("/calibrate/snapshot")
-    def calibrate_snapshot(x: int, y: int, w: int, h: int) -> Response:
+    @router.get("/calibrate/screens")
+    def calibrate_screens() -> dict[str, Any]:
         from .parsers import ocr as ocr_mod
 
-        image = ocr_mod.grayscale(ocr_mod.grab_region([x, y, w, h]))
+        return {"monitors": ocr_mod.list_monitors()}
+
+    @router.get("/calibrate/snapshot")
+    def calibrate_snapshot(x: int, y: int, w: int, h: int, color: bool = False) -> Response:
+        from .parsers import ocr as ocr_mod
+
+        image = ocr_mod.grab_region([x, y, w, h])
+        if not color:
+            image = ocr_mod.grayscale(image)
         buffer = io.BytesIO()
         image.save(buffer, format="PNG")
         return Response(buffer.getvalue(), media_type="image/png")
@@ -194,7 +202,9 @@ def build_control_router(db_path: str, config_path: str | None = None) -> APIRou
     def calibrate_preview(x: int, y: int, w: int, h: int) -> dict[str, str]:
         from .parsers import ocr as ocr_mod
 
-        return {"text": ocr_mod.capture_text(_cfg(), [x, y, w, h])}
+        cfg = _cfg()
+        raw = ocr_mod.raw_capture_text(cfg, [x, y, w, h])
+        return {"text": ocr_mod.sanitize_text(raw), "raw": " ".join(raw.split())}
 
     @router.post("/calibrate/region")
     def calibrate_region(payload: dict[str, Any]) -> dict[str, Any]:

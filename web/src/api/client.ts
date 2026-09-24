@@ -80,11 +80,23 @@ export const api = {
       body: JSON.stringify({ kind, region }),
     }),
 
-  calibratePreview: (region: number[]) =>
-    request<{ text: string }>(`/api/calibrate/preview${query({ x: region[0], y: region[1], w: region[2], h: region[3] })}`),
+  calibrateScreens: () => request<{ monitors: Monitor[] }>("/api/calibrate/screens"),
 
-  calibrateSnapshotUrl: (region: number[]): string =>
-    `/api/calibrate/snapshot${query({ x: region[0], y: region[1], w: region[2], h: region[3] })}`,
+  calibratePreview: (region: number[]) =>
+    request<{ text: string; raw: string }>(`/api/calibrate/preview${query({ x: region[0], y: region[1], w: region[2], h: region[3] })}`),
+
+  calibrateSnapshotUrl: (
+    region: number[],
+    opts: { color?: boolean; t?: number } = {},
+  ): string =>
+    `/api/calibrate/snapshot${query({
+      x: region[0],
+      y: region[1],
+      w: region[2],
+      h: region[3],
+      color: opts.color ? 1 : undefined,
+      t: opts.t,
+    })}`,
 };
 
 function buildMigrateForm(base: FormData, kind?: string): FormData {
@@ -102,4 +114,10 @@ export interface FileEntry {
 export interface FileListing {
   path: string;
   entries: FileEntry[];
+}
+export interface Monitor {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
 }

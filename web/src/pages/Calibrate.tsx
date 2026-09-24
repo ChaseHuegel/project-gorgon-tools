@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { api } from "../api/client";
+import { useEffect, useState } from "react";
+import { api, type Monitor } from "../api/client";
 import type { Config } from "../api/types";
 import { Page } from "../components/Page";
 import { RegionPicker } from "../components/RegionPicker";
@@ -12,18 +12,28 @@ export default function CalibratePage() {
 
   const [kind, setKind] = useState<"zones" | "targets">("zones");
   const [region, setRegion] = useState<number[]>([0, 0, 320, 120]);
-  const [preview, setPreview] = useState<string | null>(null);
+  const [screens, setScreens] = useState<Monitor[]>([]);
+  const [preview, setPreview] = useState<{ text: string; raw: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
-  const base = cfg ? [...cfg.ocr[kind].region] : [0, 0, 320, 120];
+  useEffect(() => {
+    if (cfg) setRegion([...cfg.ocr[kind].region]);
+  }, [cfg, kind]);
+
+  useEffect(() => {
+    api
+      .calibrateScreens()
+      .then((res) => setScreens(res.monitors))
+      .catch(() => setScreens([]));
+  }, []);
 
   async function previewOcr() {
     setBusy(true);
     setMsg(null);
     try {
       const res = await api.calibratePreview(region);
-      setPreview(res.text);
+      setPreview(res);
     } catch (e) {
       setMsg({ text: e instanceof Error ? e.message : String(e), ok: false });
     } finally {
@@ -59,22 +69,26 @@ export default function CalibratePage() {
       {!cfg ? (
         <p>Loading config…</p>
       ) : (
-        <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
-          <div>
-            <p style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
-              Snapshot of the current <strong>{kind}</strong> region. Drag on the image to select a sub-region; use the
-              fields to fine-tune, then preview OCR and save.
-            </p>
-            <RegionPicker base={base} value={region} onChange={setRegion} />
-            <div style={{ margin: "0.75rem 0", display: "flex", gap: "0.5rem" }}>
-              <button onClick={previewOcr} disabled={busy} style={btnStyle}>{busy ? "…" : "Preview OCR"}</button>
-              <button onClick={saveRegion} disabled={busy} style={saveBtn}>Save region</button>
-            </div>
-            {preview !== null && (
-              <p style={{ color: "var(--green)" }}>OCR: {preview || "(empty)"}</p>
-            )}
-            {msg && <p style={{ color: msg.ok ? "var(--green)" : "var(--red)" }}>{msg.text}</p>}
+        <div>
+          <p style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
+            The full screen is shown as a background; drag on it to mark the region OCR reads for{" "}
+            <strong>{kind}</strong>. A green box shows the current region (X/Y/W/H), and the crop on the right is
+            exactly what those coordinates grab. Use the fields to fine-tune, then preview OCR and save.
+          </p>
+          <RegionPicker screens={screens} value={region} onChange={setRegion} />
+          <div style={{ margin: "0.75rem 0", display: "flex", gap: "0.5rem" }}>
+            <button onClick={previewOcr} disabled={busy} style={btnStyle}>{busy ? "…" : "Preview OCR"}</button>
+            <button onClick={saveRegion} disabled={busy} style={saveBtn}>Save region</button>
           </div>
+          {preview !== null && (
+            <div style={{ color: "var(--green)" }}>
+              <p style={{ margin: "0 0 0.25rem" }}>OCR: {preview.text || "(empty)"}</p>
+              <p style={{ margin: 0, color: "var(--muted)", fontSize: "0.85rem", wordBreak: "break-word" }}>
+                Raw: {preview.raw || "(empty)"}
+              </p>
+            </div>
+          )}
+          {msg && <p style={{ color: msg.ok ? "var(--green)" : "var(--red)" }}>{msg.text}</p>}
         </div>
       )}
     </Page>

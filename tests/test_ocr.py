@@ -51,6 +51,35 @@ def test_capture_text_with_mocks(monkeypatch) -> None:
     assert ocr.capture_text(cfg, [0, 0, 2, 2]) == "Fairy Glen"
 
 
+def test_raw_capture_text_returns_ocr_raw(monkeypatch) -> None:
+    from PIL import Image
+
+    cfg = TrackerConfig()
+    monkeypatch.setattr(ocr, "grab_region", lambda region: Image.new("RGB", (2, 2)))
+    monkeypatch.setattr(
+        ocr, "ocr_image", lambda image, tesseract_cmd, lang: "Elmet  12:34\n"
+    )
+    assert ocr.raw_capture_text(cfg, [0, 0, 2, 2]) == "Elmet  12:34\n"
+    assert ocr.capture_text(cfg, [0, 0, 2, 2]) == "Elmet"
+
+
+def test_list_monitors_returns_bounds(monkeypatch) -> None:
+    class _FakeMss:
+        monitors = [
+            {"left": 0, "top": 0, "width": 3840, "height": 1080},
+            {"left": 0, "top": 0, "width": 1920, "height": 1080},
+        ]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+    monkeypatch.setattr(ocr, "mss", type("M", (), {"mss": staticmethod(lambda: _FakeMss())}))
+    assert ocr.list_monitors() == _FakeMss.monitors
+
+
 def _emit_sequences(monkeypatch, cfg, producer) -> list:
     """Drive a producer with a scripted sequence of OCR reads."""
     script = ["Ilmari Island", "Ilmari Island", "Elmet", "Elmet"]
