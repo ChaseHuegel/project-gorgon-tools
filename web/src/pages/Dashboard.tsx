@@ -136,8 +136,8 @@ export default function DashboardPage() {
         />
       )}
 
-      {detailData.data ? (
-        <DrillDown kind={detail!.kind} name={detail!.name} data={detailData.data} onClose={() => setDetail(null)} />
+      {detail && detailData.data ? (
+        <DrillDown kind={detail.kind} name={detail.name} data={detailData.data} onClose={() => setDetail(null)} />
       ) : null}
 
       <Charts sources={sources.data} zones={zones.data} items={topItems.data} />

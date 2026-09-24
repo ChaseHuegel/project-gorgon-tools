@@ -55,4 +55,21 @@ describe("DashboardPage", () => {
     expect(await screen.findByText(/Source: Giant Bat/)).toBeInTheDocument();
     await waitFor(() => expect(api.sourceDetail).toHaveBeenCalledWith("Giant Bat"));
   });
+
+  it("keeps the page rendered after closing a drill-down", async () => {
+    vi.spyOn(api, "search").mockResolvedValue({ sources: [{ name: "Giant Bat", drops: 2, encounters: 3 }], items: [], activities: [] });
+    vi.spyOn(api, "sourceDetail").mockResolvedValue({
+      source: "Giant Bat",
+      zones: [{ zone: "Old Graveyard", drops: 4 }],
+      items: rates,
+    });
+    render(<Dashboard />);
+    const input = await screen.findByRole("textbox", { name: "Search" });
+    fireEvent.change(input, { target: { value: "Giant" } });
+    fireEvent.click(await screen.findByRole("button", { name: /Giant Bat/ }));
+    fireEvent.click(await screen.findByText("Close"));
+    expect(screen.queryByText(/Source: Giant Bat/)).not.toBeInTheDocument();
+    expect(screen.getByText("Drop-rate dashboard")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Search" })).toBeInTheDocument();
+  });
 });
