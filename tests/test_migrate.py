@@ -20,7 +20,7 @@ def test_migrate_legacy_loot_csv(tmp_path: Path) -> None:
     loot_csv.write_text(
         "Time,Source,ID,Activity,Item,Amount,Status,LagTime,Zone\n"
         f"{scenario.local_wall(3.5)},Rat,enc-a,Skinning,Bone,1,Linked,0.5,Ilmari\n"
-        f"{scenario.local_wall(9.7)},Wolf,enc-b,Looting,Pelt,2,Linked,1.2,Fairy Glen\n"
+        "1/24/2026 5:49:21 PM,Wolf,enc-b,Looting,Pelt,2,Linked,1.2,Fairy Glen\n"
     )
     conn = _connect(tmp_path)
     stats = import_bundle(conn, TrackerConfig(), loot_csv)
