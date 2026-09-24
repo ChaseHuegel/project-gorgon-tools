@@ -35,3 +35,5 @@
 # buffer_seconds = 10.0
 # session_timeout = 3.0
 # retroactive_threshold = 0.9
+[ocr.zones]
+region = [1680, 31, 180, 20]
