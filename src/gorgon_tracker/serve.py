@@ -182,15 +182,15 @@ def build_read_router(db_path: str, include_index: bool = True) -> tuple[APIRout
     db = _DB(db_path)
     router = APIRouter()
 
-    @router.get("/health")
+    @router.get("/api/health")
     def health() -> dict[str, Any]:
         return {"status": "ok", "db": db.db_path}
 
-    @router.get("/sessions")
+    @router.get("/api/sessions")
     def sessions() -> list[dict[str, Any]]:
         return db.rows(_QUERIES["sessions"])
 
-    @router.get("/distinct")
+    @router.get("/api/distinct")
     def distinct() -> dict[str, list[str]]:
         """Distinct axis values for filter dropdowns and the search autocomplete."""
         axes = {
@@ -210,7 +210,7 @@ def build_read_router(db_path: str, include_index: bool = True) -> tuple[APIRout
             ]
         return result
 
-    @router.get("/summary")
+    @router.get("/api/summary")
     def summary(
         source: str | None = None,
         item: str | None = None,
@@ -237,7 +237,7 @@ def build_read_router(db_path: str, include_index: bool = True) -> tuple[APIRout
         query += " ORDER BY zone, monster, item"
         return db.rows(query, tuple(params))
 
-    @router.get("/drop-rates")
+    @router.get("/api/drop-rates")
     def drop_rates(
         monster: str | None = None,
         item: str | None = None,
@@ -260,7 +260,7 @@ def build_read_router(db_path: str, include_index: bool = True) -> tuple[APIRout
             limit=max(1, min(limit, 5000)) if limit else None,
         )
 
-    @router.get("/loot")
+    @router.get("/api/loot")
     def loot(
         limit_rows: int = 200,
         linked_via: str | None = None,
@@ -279,7 +279,7 @@ def build_read_router(db_path: str, include_index: bool = True) -> tuple[APIRout
 
     # --- search + drill-down -------------------------------------------------
 
-    @router.get("/search")
+    @router.get("/api/search")
     def search(q: str, limit: int = 20) -> dict[str, list[dict[str, Any]]]:
         if not q:
             return {"sources": [], "items": [], "activities": []}
@@ -303,7 +303,7 @@ def build_read_router(db_path: str, include_index: bool = True) -> tuple[APIRout
         )
         return {"sources": sources, "items": items, "activities": activities}
 
-    @router.get("/source/{name:path}")
+    @router.get("/api/source/{name:path}")
     def source_detail(name: str) -> dict[str, Any] | None:
         zones = db.rows(
             "SELECT zone, COUNT(*) AS drops FROM loot_drops WHERE source = ? "
@@ -313,7 +313,7 @@ def build_read_router(db_path: str, include_index: bool = True) -> tuple[APIRout
         items = _drop_rates(db, monster=name, status=None)
         return {"source": name, "zones": zones, "items": items}
 
-    @router.get("/item/{name:path}")
+    @router.get("/api/item/{name:path}")
     def item_detail(name: str) -> dict[str, Any] | None:
         sources = _drop_rates(db, item=name, status=None)
         zones = db.rows(
@@ -323,7 +323,7 @@ def build_read_router(db_path: str, include_index: bool = True) -> tuple[APIRout
         )
         return {"item": name, "sources": sources, "zones": zones}
 
-    @router.get("/activity/{name:path}")
+    @router.get("/api/activity/{name:path}")
     def activity_detail(name: str) -> dict[str, Any] | None:
         sources = db.rows(
             "SELECT source AS monster, COUNT(*) AS drops, "
@@ -365,7 +365,7 @@ def build_read_router(db_path: str, include_index: bool = True) -> tuple[APIRout
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
         return where, params
 
-    @router.get("/analysis/sources")
+    @router.get("/api/analysis/sources")
     def analysis_sources(
         source: str | None = None,
         item: str | None = None,
@@ -390,7 +390,7 @@ def build_read_router(db_path: str, include_index: bool = True) -> tuple[APIRout
         )
         return rows
 
-    @router.get("/analysis/zones")
+    @router.get("/api/analysis/zones")
     def analysis_zones(
         source: str | None = None,
         item: str | None = None,
@@ -410,7 +410,7 @@ def build_read_router(db_path: str, include_index: bool = True) -> tuple[APIRout
         )
         return rows
 
-    @router.get("/analysis/items")
+    @router.get("/api/analysis/items")
     def analysis_items(
         source: str | None = None,
         zone: str | None = None,
@@ -472,17 +472,17 @@ def build_read_router(db_path: str, include_index: bool = True) -> tuple[APIRout
         @router.get("/")
         def index() -> dict[str, Any]:
             endpoints = [
-                "/health",
-                "/sessions",
-                "/distinct",
-                "/summary",
-                "/drop-rates",
-                "/search?q=X",
-                "/source/{name}",
-                "/item/{name}",
-                "/activity/{name}",
-                "/analysis/sources|zones|items",
-                "/loot?limit_rows=200",
+                "/api/health",
+                "/api/sessions",
+                "/api/distinct",
+                "/api/summary",
+                "/api/drop-rates",
+                "/api/search?q=X",
+                "/api/source/{name}",
+                "/api/item/{name}",
+                "/api/activity/{name}",
+                "/api/analysis/sources|zones|items",
+                "/api/loot?limit_rows=200",
             ]
             return {"service": "gorgon-tracker", "endpoints": endpoints}
 

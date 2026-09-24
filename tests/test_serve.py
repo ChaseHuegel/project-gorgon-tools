@@ -32,22 +32,22 @@ def test_endpoints_serve_read_only(tmp_path: Path) -> None:
     db_path = _populated(tmp_path)
     client = TestClient(serve.build_app(str(db_path)))
 
-    assert client.get("/health").json()["status"] == "ok"
+    assert client.get("/api/health").json()["status"] == "ok"
     assert client.get("/").json()["service"] == "gorgon-tracker"
 
-    sessions = client.get("/sessions").json()
+    sessions = client.get("/api/sessions").json()
     assert len(sessions) == 1
 
-    summary = client.get("/summary").json()
+    summary = client.get("/api/summary").json()
     assert len(summary) == 4
 
-    rates = client.get("/drop-rates").json()
+    rates = client.get("/api/drop-rates").json()
     assert len(rates) == 4
-    filtered = client.get("/drop-rates", params={"monster": "Dire Wolf"}).json()
+    filtered = client.get("/api/drop-rates", params={"monster": "Dire Wolf"}).json()
     assert len(filtered) == 2
     assert all(r["monster"] == "Dire Wolf" for r in filtered)
 
-    loot = client.get("/loot", params={"limit_rows": 2}).json()
+    loot = client.get("/api/loot", params={"limit_rows": 2}).json()
     assert len(loot) == 2
     assert loot[0]["item"] in {"Bat Wing", "Bat Guano", "Wolf Pelt", "Ground Twig"}
     assert "id" in loot[0]
@@ -57,52 +57,52 @@ def test_analysis_endpoints_and_filters(tmp_path: Path) -> None:
     db_path = _populated(tmp_path)
     client = TestClient(serve.build_app(str(db_path)))
 
-    distinct = client.get("/distinct").json()
+    distinct = client.get("/api/distinct").json()
     assert "Giant Bat" in distinct["sources"]
     assert "Dire Wolf" in distinct["sources"]
     assert "Bat Guano" in distinct["items"]
     assert "Looting" in distinct["activities"]
     assert any(z in distinct["zones"] for z in ("Old Graveyard", "Fairy Glen"))
 
-    search = client.get("/search", params={"q": "Bat"}).json()
+    search = client.get("/api/search", params={"q": "Bat"}).json()
     assert any(s["name"] == "Giant Bat" for s in search["sources"])
     assert any(i["name"] == "Bat Guano" for i in search["items"])
-    activity_hits = client.get("/search", params={"q": "Loot"}).json()
+    activity_hits = client.get("/api/search", params={"q": "Loot"}).json()
     assert any(a["name"] == "Looting" for a in activity_hits["activities"])
 
-    source = client.get("/source/Giant Bat").json()
+    source = client.get("/api/source/Giant Bat").json()
     assert source["source"] == "Giant Bat"
     assert any(i["item"] == "Bat Guano" for i in source["items"])
     assert source["zones"]
 
-    item = client.get("/item/Bat Guano").json()
+    item = client.get("/api/item/Bat Guano").json()
     assert item["item"] == "Bat Guano"
     assert any(s["monster"] == "Giant Bat" for s in item["sources"])
 
-    activity = client.get("/activity/Looting").json()
+    activity = client.get("/api/activity/Looting").json()
     assert activity["activity"] == "Looting"
     assert activity["sources"] and activity["items"] and activity["zones"]
 
-    sources = client.get("/analysis/sources").json()
+    sources = client.get("/api/analysis/sources").json()
     assert any(m["monster"] == "Giant Bat" for m in sources)
-    zones = client.get("/analysis/zones").json()
+    zones = client.get("/api/analysis/zones").json()
     assert any(z["zone"] == "Old Graveyard" for z in zones)
-    items = client.get("/analysis/items").json()
+    items = client.get("/api/analysis/items").json()
     assert any(i["item"] == "Bat Guano" for i in items)
 
-    zoned = client.get("/drop-rates", params={"zone": "Old Graveyard"}).json()
+    zoned = client.get("/api/drop-rates", params={"zone": "Old Graveyard"}).json()
     assert zoned and all(r["monster"] == "Giant Bat" for r in zoned)
-    ranked = client.get("/drop-rates", params={"sort": "drops", "order": "desc", "limit": 2}).json()
+    ranked = client.get("/api/drop-rates", params={"sort": "drops", "order": "desc", "limit": 2}).json()
     assert len(ranked) == 2
     assert ranked[0]["drops"] >= ranked[1]["drops"]
-    assert len(client.get("/summary", params={"source": "Dire"}).json()) > 0
+    assert len(client.get("/api/summary", params={"source": "Dire"}).json()) > 0
 
 
 def test_loot_endpoint_exposes_evidence_and_filters(tmp_path: Path) -> None:
     db_path = _populated(tmp_path)
     client = TestClient(serve.build_app(str(db_path)))
 
-    all_rows = client.get("/loot", params={"limit_rows": 100}).json()
+    all_rows = client.get("/api/loot", params={"limit_rows": 100}).json()
     assert len(all_rows) == 4
     by_item = {r["item"]: r for r in all_rows}
     for key in ("linked_via", "monster_name", "monster_lag_ms", "target_name", "target_lag_ms", "overridden"):
@@ -114,9 +114,9 @@ def test_loot_endpoint_exposes_evidence_and_filters(tmp_path: Path) -> None:
     assert twig["corroborated_by_search"] is True
     assert twig["activity"] == "Looting"
 
-    assert len(client.get("/loot", params={"linked_via": "monster"}).json()) == 3
-    assert len(client.get("/loot", params={"confidence": "high"}).json()) == 3
-    assert len(client.get("/loot", params={"confidence": "uncertain"}).json()) == 1
+    assert len(client.get("/api/loot", params={"linked_via": "monster"}).json()) == 3
+    assert len(client.get("/api/loot", params={"confidence": "high"}).json()) == 3
+    assert len(client.get("/api/loot", params={"confidence": "uncertain"}).json()) == 1
 
 
 @pytest.mark.anyio

@@ -140,7 +140,7 @@ def _replay_and_drops(tmp_path: Path) -> tuple[TestClient, list[dict]]:
         },
     )
     assert resp.status_code == 200, resp.text
-    drops = client.get("/loot", params={"limit_rows": 100}).json()
+    drops = client.get("/api/loot", params={"limit_rows": 100}).json()
     return client, drops
 
 
@@ -166,13 +166,13 @@ def test_loot_override_roundtrip(tmp_path: Path) -> None:
     assert partial["activity"] == "Harvesting"
 
     # The list endpoint reflects the override.
-    listing = {r["id"]: r for r in client.get("/loot", params={"limit_rows": 100}).json()}
+    listing = {r["id"]: r for r in client.get("/api/loot", params={"limit_rows": 100}).json()}
     assert listing[target["id"]]["source"] == "Chest"
 
     # Revert restores the correlated values.
     reverted = client.delete(f"/api/loot/{target['id']}")
     assert reverted.status_code == 200
-    listing = {r["id"]: r for r in client.get("/loot", params={"limit_rows": 100}).json()}
+    listing = {r["id"]: r for r in client.get("/api/loot", params={"limit_rows": 100}).json()}
     assert listing[target["id"]]["overridden"] is False
     assert listing[target["id"]]["source"] == "Dire Wolf"
 

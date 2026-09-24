@@ -45,7 +45,7 @@ function query(params: object): string {
   return parts.length ? `?${parts.join("&")}` : "";
 }
 
-export const exportUrl = (since?: string): string => `/export${query({ since })}`;
+export const exportUrl = (since?: string): string => `/api/export${query({ since })}`;
 
 export const streamUrl = (kind: "loot" | "events" | "status", since?: number): string =>
   `/api/stream/${kind}${query({ since })}`;
@@ -81,16 +81,16 @@ export const api = {
       body: JSON.stringify({ updates }),
     }),
 
-  sessions: () => request<Session[]>("/sessions"),
+  sessions: () => request<Session[]>("/api/sessions"),
   summary: (
     params: { source?: string; item?: string; zone?: string; activity?: string } = {},
-  ) => request<SummaryRow[]>(`/summary${query(params)}`),
+  ) => request<SummaryRow[]>(`/api/summary${query(params)}`),
   dropRates: (params: DropRateParams = {}) =>
-    request<DropRateRow[]>(`/drop-rates${query(params)}`),
+    request<DropRateRow[]>(`/api/drop-rates${query(params)}`),
   loot: (
     limit = 300,
     params: { linkedVia?: string; confidence?: string } = {},
-  ) => request<LootRow[]>(`/loot?limit_rows=${limit}${query(params)}`),
+  ) => request<LootRow[]>(`/api/loot?limit_rows=${limit}${query(params)}`),
   overrideLoot: (id: number, payload: LootOverride) =>
     request<LootRow>(`/api/loot/${id}`, {
       method: "PUT",
@@ -100,17 +100,17 @@ export const api = {
   revertLoot: (id: number) =>
     request<{ ok: boolean }>(`/api/loot/${id}`, { method: "DELETE" }),
 
-  distinct: () => request<DistinctValues>("/distinct"),
-  search: (q: string) => request<SearchResults>(`/search${query({ q })}`),
+  distinct: () => request<DistinctValues>("/api/distinct"),
+  search: (q: string) => request<SearchResults>(`/api/search${query({ q })}`),
   sourceDetail: (name: string) =>
-    request<SourceDetail>(`/source/${encodeURIComponent(name)}`),
-  itemDetail: (name: string) => request<ItemDetail>(`/item/${encodeURIComponent(name)}`),
+    request<SourceDetail>(`/api/source/${encodeURIComponent(name)}`),
+  itemDetail: (name: string) => request<ItemDetail>(`/api/item/${encodeURIComponent(name)}`),
   activityDetail: (name: string) =>
-    request<ActivityDetail>(`/activity/${encodeURIComponent(name)}`),
+    request<ActivityDetail>(`/api/activity/${encodeURIComponent(name)}`),
 
   analysisSources: (
     params: AnalysisSourceParams = {},
-  ) => request<SourceAgg[]>(`/analysis/sources${query(params)}`),
+  ) => request<SourceAgg[]>(`/api/analysis/sources${query(params)}`),
   analysisZones: (
     params: {
       source?: string;
@@ -119,7 +119,7 @@ export const api = {
       status?: string;
       limit?: number;
     } = {},
-  ) => request<ZoneCount[]>(`/analysis/zones${query(params)}`),
+  ) => request<ZoneCount[]>(`/api/analysis/zones${query(params)}`),
   analysisItems: (
     params: {
       source?: string;
@@ -128,7 +128,7 @@ export const api = {
       status?: string;
       limit?: number;
     } = {},
-  ) => request<ItemCount[]>(`/analysis/items${query(params)}`),
+  ) => request<ItemCount[]>(`/api/analysis/items${query(params)}`),
 
   chatTail: (limit = 500) => request<ChatTail>(`/api/chat/tail${query({ limit })}`),
 

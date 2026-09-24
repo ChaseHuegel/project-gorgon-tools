@@ -14,6 +14,13 @@ const orphaned = {
   status: "Orphaned",
   lag_ms: 0,
   linked_via: "orphan",
+  monster_name: null,
+  monster_lag_ms: null,
+  target_name: null,
+  target_lag_ms: null,
+  corroborated_by_search: false,
+  note: null,
+  overridden: false,
 };
 
 describe("LootPage", () => {

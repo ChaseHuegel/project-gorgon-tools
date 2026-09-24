@@ -83,13 +83,13 @@ def test_daemon_endpoints_mock() -> None:
 
 def test_web_app_mounts_read_endpoints(tmp_path: Path) -> None:
     client = TestClient(build_web_app(str(tmp_path / "data/gorgon.db"), None))
-    assert client.get("/health").json()["status"] == "ok"
+    assert client.get("/api/health").json()["status"] == "ok"
     assert client.get("/api/status").status_code == 200
 
 
 def test_build_read_router_api_health_isolation(tmp_path: Path) -> None:
     client = TestClient(build_web_app(str(tmp_path / "data/gorgon.db"), None))
-    assert client.get("/loot").json() == []
+    assert client.get("/api/loot").json() == []
 
 
 def test_spa_served_with_fallback_and_api_404(tmp_path: Path) -> None:
