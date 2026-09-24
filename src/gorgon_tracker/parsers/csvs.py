@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import math
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +41,14 @@ def read_target_sightings(path: Path) -> list[TargetSighting]:
     return sorted(sightings, key=lambda s: s.time_ms)
 
 
+def _lag_ms(value: str) -> int:
+    try:
+        lag = float(value) * 1000
+    except (TypeError, ValueError):
+        return 0
+    return round(lag) if math.isfinite(lag) else 0
+
+
 def read_legacy_loot_csv(path: Path) -> list[dict[str, Any]]:
     """Read a legacy CompileLootEvents loot.csv into normalized row dicts."""
     rows: list[dict[str, Any]] = []
@@ -53,7 +62,7 @@ def read_legacy_loot_csv(path: Path) -> list[dict[str, Any]]:
                 "item": cell(row, "Item"),
                 "amount": int(cell(row, "Amount", "amount") or "1"),
                 "status": cell(row, "Status"),
-                "lag_ms": round(float(cell(row, "LagTime", "Lag") or "0") * 1000),
+                "lag_ms": _lag_ms(cell(row, "LagTime", "Lag") or "0"),
                 "zone": cell(row, "Zone"),
             }
         )

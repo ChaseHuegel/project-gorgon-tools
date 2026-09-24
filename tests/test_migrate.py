@@ -21,19 +21,26 @@ def test_migrate_legacy_loot_csv(tmp_path: Path) -> None:
         "Time,Source,ID,Activity,Item,Amount,Status,LagTime,Zone\n"
         f"{scenario.local_wall(3.5)},Rat,enc-a,Skinning,Bone,1,Linked,0.5,Ilmari\n"
         "1/24/2026 5:49:21 PM,Wolf,enc-b,Looting,Pelt,2,Linked,1.2,Fairy Glen\n"
+        f"{scenario.local_wall(5.0)},Ground/Unknown,enc-c,Looting,Dirt,1,Orphaned,1.79769313486232E+308,Phantom Ilmari Desert\n"
+        f"{scenario.local_wall(6.0)},Ground/Unknown,enc-d,Looting,Grass,1,Orphaned,nonsense,Fairy Glen\n"
     )
     conn = _connect(tmp_path)
     stats = import_bundle(conn, TrackerConfig(), loot_csv)
     assert stats["kind"] == "loot"
-    assert stats["imported"] == 2
+    assert stats["imported"] == 4
 
-    rows = conn.execute("SELECT source, item, encounter_id FROM loot_drops ORDER BY captured_at").fetchall()
-    assert len(rows) == 2
+    rows = conn.execute(
+        "SELECT source, item, encounter_id, lag_ms FROM loot_drops ORDER BY captured_at"
+    ).fetchall()
+    assert len(rows) == 4
     assert rows[0]["source"] == "Rat"
     assert rows[0]["item"] == "Bone"
     assert rows[0]["encounter_id"] != rows[1]["encounter_id"]
-    assert conn.execute("SELECT COUNT(*) c FROM encounters").fetchone()["c"] == 2
-    assert conn.execute("SELECT COUNT(*) c FROM loot").fetchone()["c"] == 2
+    by_source = {r["source"]: r["lag_ms"] for r in rows}
+    assert by_source["Ground/Unknown"] == 0
+    assert by_source["Wolf"] == 1200
+    assert conn.execute("SELECT COUNT(*) c FROM encounters").fetchone()["c"] == 4
+    assert conn.execute("SELECT COUNT(*) c FROM loot").fetchone()["c"] == 4
     conn.close()
 
 
