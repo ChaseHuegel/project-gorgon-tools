@@ -165,6 +165,28 @@ def test_calibrate_screens_lists_monitors(tmp_path: Path, monkeypatch) -> None:
     assert resp.json()["monitors"][1] == {"left": 0, "top": 0, "width": 1920, "height": 1080}
 
 
+def test_calibrate_endpoints_surface_capture_failure(tmp_path: Path, monkeypatch) -> None:
+    import gorgon_tracker.parsers.ocr as ocr_mod
+
+    def boom(*args, **kwargs):
+        raise ocr_mod.ScreenCaptureError("no interactive display available")
+
+    monkeypatch.setattr(ocr_mod, "grab_region", boom)
+    monkeypatch.setattr(ocr_mod, "raw_capture_text", boom)
+    monkeypatch.setattr(ocr_mod, "list_monitors", boom)
+    client = _client(tmp_path)
+
+    snap = client.get("/api/calibrate/snapshot", params={"x": 0, "y": 0, "w": 20, "h": 10})
+    assert snap.status_code == 502
+    assert "display" in snap.json()["detail"]
+
+    prev = client.get("/api/calibrate/preview", params={"x": 0, "y": 0, "w": 20, "h": 10})
+    assert prev.status_code == 502
+
+    screens = client.get("/api/calibrate/screens")
+    assert screens.status_code == 502
+
+
 def test_calibrate_region_persists(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     config_file = _config_file(tmp_path)

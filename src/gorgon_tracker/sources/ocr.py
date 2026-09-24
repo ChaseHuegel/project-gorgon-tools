@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 from collections.abc import Callable
 from typing import TypeVar
 
 from ..config import OcrRegionConfig, TrackerConfig
 from ..correlator import TargetSighting, ZoneChange
-from ..parsers.ocr import capture_text
+from ..parsers.ocr import ScreenCaptureError, capture_text
 from ..timeutil import utc_now_ms
 
 E = TypeVar("E")
+logger = logging.getLogger("gorgon_tracker.sources.ocr")
 
 
 def produce_region(
@@ -32,7 +34,10 @@ def produce_region(
     while not stop_event.wait(region_cfg.interval_s):
         try:
             text = capture_text(cfg, region_cfg.region)
-        except Exception:  # display/OCR hiccups should not kill capture
+        except ScreenCaptureError:
+            logger.warning("screen capture failed; skipping OCR read", exc_info=True)
+            continue
+        except Exception:  # OCR/tesseract hiccups should not kill capture
             text = ""
         if not text:
             continue

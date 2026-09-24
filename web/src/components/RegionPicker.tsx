@@ -37,6 +37,7 @@ export function RegionPicker({
   const [sel, setSel] = useState<Sel>(null);
   const [drag, setDrag] = useState(false);
   const [stamp, setStamp] = useState(() => Date.now());
+  const [captureError, setCaptureError] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
 
   const screen = screens[monitorIdx] ?? pickScreen(screens, value);
@@ -172,11 +173,32 @@ export function RegionPicker({
               cursor: "crosshair",
             }}
             draggable={false}
+            onError={() => setCaptureError(true)}
+            onLoad={() => setCaptureError(false)}
             onPointerDown={onStart}
             onPointerMove={onMove}
             onPointerUp={onEnd}
             onPointerLeave={onEnd}
           />
+          {captureError && (
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "1rem",
+                textAlign: "center",
+                color: "var(--red)",
+                background: "rgba(0,0,0,0.35)",
+                borderRadius: 6,
+                pointerEvents: "none",
+              }}
+            >
+              Screen capture failed — check the connected display / portal availability.
+            </div>
+          )}
           {regionStyle && (
             <div
               style={{
@@ -216,6 +238,7 @@ export function RegionPicker({
                 borderRadius: 6,
                 imageRendering: "pixelated",
               }}
+              onError={() => setCaptureError(true)}
             />
           ) : (
             <p style={{ color: "var(--muted)", fontSize: "0.85rem" }}>Set a non-zero width/height to see the crop.</p>

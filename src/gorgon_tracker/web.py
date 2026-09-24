@@ -185,13 +185,19 @@ def build_control_router(db_path: str, config_path: str | None = None) -> APIRou
     def calibrate_screens() -> dict[str, Any]:
         from .parsers import ocr as ocr_mod
 
-        return {"monitors": ocr_mod.list_monitors()}
+        try:
+            return {"monitors": ocr_mod.list_monitors()}
+        except ocr_mod.ScreenCaptureError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     @router.get("/calibrate/snapshot")
     def calibrate_snapshot(x: int, y: int, w: int, h: int, color: bool = False) -> Response:
         from .parsers import ocr as ocr_mod
 
-        image = ocr_mod.grab_region([x, y, w, h])
+        try:
+            image = ocr_mod.grab_region([x, y, w, h])
+        except ocr_mod.ScreenCaptureError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
         if not color:
             image = ocr_mod.grayscale(image)
         buffer = io.BytesIO()
@@ -203,7 +209,10 @@ def build_control_router(db_path: str, config_path: str | None = None) -> APIRou
         from .parsers import ocr as ocr_mod
 
         cfg = _cfg()
-        raw = ocr_mod.raw_capture_text(cfg, [x, y, w, h])
+        try:
+            raw = ocr_mod.raw_capture_text(cfg, [x, y, w, h])
+        except ocr_mod.ScreenCaptureError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
         return {"text": ocr_mod.sanitize_text(raw), "raw": " ".join(raw.split())}
 
     @router.post("/calibrate/region")

@@ -18,6 +18,7 @@ dependencies = [
     "pytesseract>=0.3.10",
     "watchdog>=4.0",
     "tomlkit>=0.12",
+    "jeepney>=0.8",
 ]
 
 [project.optional-dependencies]
