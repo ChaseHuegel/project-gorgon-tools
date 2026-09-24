@@ -83,6 +83,71 @@ export interface DropRateRow {
   drop_rate: number;
 }
 
+export interface DistinctValues {
+  sources: string[];
+  zones: string[];
+  items: string[];
+  activities: string[];
+}
+
+export interface SearchMatch {
+  name: string;
+  drops: number;
+  encounters?: number;
+  sources?: number;
+}
+
+export interface SearchResults {
+  sources: SearchMatch[];
+  items: SearchMatch[];
+  activities: SearchMatch[];
+}
+
+export interface ZoneCount {
+  zone: string;
+  drops: number;
+  sources?: number;
+}
+
+export interface SourceCount {
+  monster: string;
+  drops: number;
+  encounters: number;
+}
+
+export interface ItemCount {
+  item: string;
+  drops: number;
+  sources?: number;
+}
+
+export interface SourceDetail {
+  source: string;
+  zones: ZoneCount[];
+  items: DropRateRow[];
+}
+
+export interface ItemDetail {
+  item: string;
+  sources: DropRateRow[];
+  zones: ZoneCount[];
+}
+
+export interface ActivityDetail {
+  activity: string;
+  sources: SourceCount[];
+  items: ItemCount[];
+  zones: ZoneCount[];
+}
+
+export interface SourceAgg {
+  monster: string;
+  drops: number;
+  quantity: number;
+  encounters: number;
+  drop_rate: number;
+}
+
 export interface LootRow {
   id: number;
   captured_at: number;

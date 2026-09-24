@@ -1,8 +1,12 @@
 import type {
+  ActivityDetail,
   ChatTail,
   ConfigResponse,
   DaemonInfo,
+  DistinctValues,
   DropRateRow,
+  ItemCount,
+  ItemDetail,
   LootOverride,
   LootRow,
   MigrateResult,
@@ -10,9 +14,13 @@ import type {
   NamesUpdateResult,
   PortsDiscover,
   ReplayResult,
+  SearchResults,
   Session,
+  SourceAgg,
+  SourceDetail,
   Status,
   SummaryRow,
+  ZoneCount,
 } from "./types";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -30,9 +38,9 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
-function query(params: Record<string, string | number | undefined>): string {
-  const parts = Object.entries(params)
-    .filter(([, v]) => v !== undefined && v !== "")
+function query(params: object): string {
+  const parts = Object.entries(params as Record<string, unknown>)
+    .filter(([, v]) => v !== undefined && v !== null && v !== "")
     .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`);
   return parts.length ? `?${parts.join("&")}` : "";
 }
@@ -41,6 +49,26 @@ export const exportUrl = (since?: string): string => `/export${query({ since })}
 
 export const streamUrl = (kind: "loot" | "events" | "status", since?: number): string =>
   `/api/stream/${kind}${query({ since })}`;
+
+export interface DropRateParams {
+  monster?: string;
+  item?: string;
+  zone?: string;
+  activity?: string;
+  status?: string;
+  sort?: string;
+  order?: "asc" | "desc";
+  limit?: number;
+}
+
+export interface AnalysisSourceParams {
+  source?: string;
+  item?: string;
+  zone?: string;
+  activity?: string;
+  status?: string;
+  limit?: number;
+}
 
 export const api = {
   status: () => request<Status>("/api/status"),
@@ -54,9 +82,10 @@ export const api = {
     }),
 
   sessions: () => request<Session[]>("/sessions"),
-  summary: (params: { monster?: string; zone?: string } = {}) =>
-    request<SummaryRow[]>(`/summary${query(params)}`),
-  dropRates: (params: { monster?: string; item?: string } = {}) =>
+  summary: (
+    params: { source?: string; item?: string; zone?: string; activity?: string } = {},
+  ) => request<SummaryRow[]>(`/summary${query(params)}`),
+  dropRates: (params: DropRateParams = {}) =>
     request<DropRateRow[]>(`/drop-rates${query(params)}`),
   loot: (
     limit = 300,
@@ -70,6 +99,36 @@ export const api = {
     }),
   revertLoot: (id: number) =>
     request<{ ok: boolean }>(`/api/loot/${id}`, { method: "DELETE" }),
+
+  distinct: () => request<DistinctValues>("/distinct"),
+  search: (q: string) => request<SearchResults>(`/search${query({ q })}`),
+  sourceDetail: (name: string) =>
+    request<SourceDetail>(`/source/${encodeURIComponent(name)}`),
+  itemDetail: (name: string) => request<ItemDetail>(`/item/${encodeURIComponent(name)}`),
+  activityDetail: (name: string) =>
+    request<ActivityDetail>(`/activity/${encodeURIComponent(name)}`),
+
+  analysisSources: (
+    params: AnalysisSourceParams = {},
+  ) => request<SourceAgg[]>(`/analysis/sources${query(params)}`),
+  analysisZones: (
+    params: {
+      source?: string;
+      item?: string;
+      activity?: string;
+      status?: string;
+      limit?: number;
+    } = {},
+  ) => request<ZoneCount[]>(`/analysis/zones${query(params)}`),
+  analysisItems: (
+    params: {
+      source?: string;
+      zone?: string;
+      activity?: string;
+      status?: string;
+      limit?: number;
+    } = {},
+  ) => request<ItemCount[]>(`/analysis/items${query(params)}`),
 
   chatTail: (limit = 500) => request<ChatTail>(`/api/chat/tail${query({ limit })}`),
 

@@ -18,8 +18,6 @@ from . import stream
 
 _QUERIES: dict[str, str] = {
     "sessions": "SELECT id, uuid, started_at, ended_at, platform FROM sessions ORDER BY started_at DESC",
-    "summary": "SELECT * FROM v_summary ORDER BY zone, monster, item",
-    "drop_rates": "SELECT * FROM v_drop_rates",
     "loot": (
         "SELECT ld.id, ld.captured_at, ld.source, ld.activity, ld.item, ld.amount, ld.zone,"
         " ld.status, ld.lag_ms, ld.linked_via, ld.monster_name, ld.monster_lag_ms,"
@@ -58,6 +56,97 @@ def _effective_loot_row(row: dict[str, Any]) -> dict[str, Any]:
     cleaned["note"] = row.get("ov_note")
     cleaned["overridden"] = overridden
     return cleaned
+
+# Whitelisted sort keys -> SQL expression. Used to prevent injection via the sort param.
+_SORT_COLUMNS: dict[str, str] = {
+    "monster": "ld.source",
+    "item": "ld.item",
+    "drops": "COUNT(*)",
+    "quantity": "SUM(ld.amount)",
+    "encounters": "encounters",
+    "rate": "drop_rate",
+    "zone": "ld.zone",
+    "activity": "ld.activity",
+}
+
+_DROP_RATES_BASE = """
+WITH encounter_counts AS (
+    SELECT source AS monster, COUNT(DISTINCT encounter_id) AS encounter_count
+    FROM loot_drops
+    WHERE status = 'Linked' AND encounter_id IS NOT NULL
+    GROUP BY source
+)
+SELECT ld.source AS monster,
+       ld.item,
+       COUNT(*) AS drops,
+       SUM(ld.amount) AS quantity,
+       COALESCE(e.encounter_count, 0) AS encounters,
+       ROUND(CAST(COUNT(*) AS REAL) / NULLIF(COALESCE(e.encounter_count, 0), 0), 4) AS drop_rate
+FROM loot_drops ld
+LEFT JOIN encounter_counts e ON e.monster = ld.source
+{where}
+GROUP BY ld.source, ld.item
+{order}
+{limit}
+"""
+
+
+def _drop_rates_where(
+    *,
+    monster: str | None = None,
+    item: str | None = None,
+    zone: str | None = None,
+    activity: str | None = None,
+    status: str | None = None,
+) -> tuple[str, list[Any]]:
+    clauses: list[str] = []
+    params: list[Any] = []
+    if status:
+        clauses.append("ld.status = ?")
+        params.append(status)
+    if monster:
+        clauses.append("ld.source = ?")
+        params.append(monster)
+    if item:
+        clauses.append("ld.item = ?")
+        params.append(item)
+    if zone:
+        clauses.append("ld.zone = ?")
+        params.append(zone)
+    if activity:
+        clauses.append("ld.activity = ?")
+        params.append(activity)
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    return where, params
+
+
+def _orders(sort: str | None, order: str | None) -> str:
+    if not sort or sort not in _SORT_COLUMNS:
+        return ""
+    direction = "ASC" if str(order or "asc").lower() == "asc" else "DESC"
+    return f"ORDER BY {_SORT_COLUMNS[sort]} {direction}"
+
+
+def _drop_rates(
+    db: _DB,
+    *,
+    monster: str | None = None,
+    item: str | None = None,
+    zone: str | None = None,
+    activity: str | None = None,
+    status: str | None = "Linked",
+    sort: str | None = None,
+    order: str | None = None,
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
+    where, params = _drop_rates_where(
+        monster=monster, item=item, zone=zone, activity=activity, status=status
+    )
+    query = _DROP_RATES_BASE.format(where=where, order=_orders(sort, order), limit="")
+    if limit is not None:
+        query += " LIMIT ?"
+        params.append(limit)
+    return db.rows(query, tuple(params))
 
 
 class _DB:
@@ -101,22 +190,75 @@ def build_read_router(db_path: str, include_index: bool = True) -> tuple[APIRout
     def sessions() -> list[dict[str, Any]]:
         return db.rows(_QUERIES["sessions"])
 
+    @router.get("/distinct")
+    def distinct() -> dict[str, list[str]]:
+        """Distinct axis values for filter dropdowns and the search autocomplete."""
+        axes = {
+            "sources": "source",
+            "zones": "zone",
+            "items": "item",
+            "activities": "activity",
+        }
+        result: dict[str, list[str]] = {}
+        for key, column in axes.items():
+            result[key] = [
+                str(r["v"])
+                for r in db.rows(
+                    f"SELECT DISTINCT {column} AS v FROM loot_drops "
+                    f"WHERE {column} IS NOT NULL AND {column} != '' ORDER BY {column} COLLATE NOCASE"
+                )
+            ]
+        return result
+
     @router.get("/summary")
-    def summary() -> list[dict[str, Any]]:
-        return db.rows(_QUERIES["summary"])
+    def summary(
+        source: str | None = None,
+        item: str | None = None,
+        zone: str | None = None,
+        activity: str | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if monster_like := source:
+            clauses.append("monster LIKE ?")
+            params.append(f"%{monster_like}%")
+        if item_like := item:
+            clauses.append("item LIKE ?")
+            params.append(f"%{item_like}%")
+        if zone:
+            clauses.append("zone = ?")
+            params.append(zone)
+        if activity:
+            clauses.append("activity = ?")
+            params.append(activity)
+        query = "SELECT * FROM v_summary"
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY zone, monster, item"
+        return db.rows(query, tuple(params))
 
     @router.get("/drop-rates")
-    def drop_rates(monster: str | None = None, item: str | None = None) -> list[dict[str, Any]]:
-        base = _QUERIES["drop_rates"]
-        clauses, params = [], []
-        if monster:
-            clauses.append("monster = ?")
-            params.append(monster)
-        if item:
-            clauses.append("item = ?")
-            params.append(item)
-        query = base + ((" WHERE " + " AND ".join(clauses)) if clauses else "")
-        return db.rows(query, tuple(params))
+    def drop_rates(
+        monster: str | None = None,
+        item: str | None = None,
+        zone: str | None = None,
+        activity: str | None = None,
+        status: str | None = "Linked",
+        sort: str | None = None,
+        order: str | None = None,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        return _drop_rates(
+            db,
+            monster=monster,
+            item=item,
+            zone=zone,
+            activity=activity,
+            status=status,
+            sort=sort,
+            order=order,
+            limit=max(1, min(limit, 5000)) if limit else None,
+        )
 
     @router.get("/loot")
     def loot(
@@ -134,6 +276,159 @@ def build_read_router(db_path: str, include_index: bool = True) -> tuple[APIRout
         elif confidence == "high":
             query = query.replace(" ORDER BY", " WHERE ld.linked_via = 'monster' ORDER BY", 1)
         return [_effective_loot_row(r) for r in db.rows(query, tuple(params))]
+
+    # --- search + drill-down -------------------------------------------------
+
+    @router.get("/search")
+    def search(q: str, limit: int = 20) -> dict[str, list[dict[str, Any]]]:
+        if not q:
+            return {"sources": [], "items": [], "activities": []}
+        like = f"%{q}%"
+        cap = max(1, min(limit, 100))
+        sources = db.rows(
+            "SELECT source AS name, COUNT(*) AS drops, "
+            "COUNT(DISTINCT encounter_id) AS encounters "
+            "FROM loot_drops WHERE source LIKE ? GROUP BY source ORDER BY drops DESC LIMIT ?",
+            (like, cap),
+        )
+        items = db.rows(
+            "SELECT item AS name, COUNT(*) AS drops, COUNT(DISTINCT source) AS sources "
+            "FROM loot_drops WHERE item LIKE ? GROUP BY item ORDER BY drops DESC LIMIT ?",
+            (like, cap),
+        )
+        activities = db.rows(
+            "SELECT activity AS name, COUNT(*) AS drops "
+            "FROM loot_drops WHERE activity LIKE ? GROUP BY activity ORDER BY drops DESC LIMIT ?",
+            (like, cap),
+        )
+        return {"sources": sources, "items": items, "activities": activities}
+
+    @router.get("/source/{name:path}")
+    def source_detail(name: str) -> dict[str, Any] | None:
+        zones = db.rows(
+            "SELECT zone, COUNT(*) AS drops FROM loot_drops WHERE source = ? "
+            "GROUP BY zone ORDER BY drops DESC",
+            (name,),
+        )
+        items = _drop_rates(db, monster=name, status=None)
+        return {"source": name, "zones": zones, "items": items}
+
+    @router.get("/item/{name:path}")
+    def item_detail(name: str) -> dict[str, Any] | None:
+        sources = _drop_rates(db, item=name, status=None)
+        zones = db.rows(
+            "SELECT zone, COUNT(*) AS drops FROM loot_drops WHERE item = ? "
+            "GROUP BY zone ORDER BY drops DESC",
+            (name,),
+        )
+        return {"item": name, "sources": sources, "zones": zones}
+
+    @router.get("/activity/{name:path}")
+    def activity_detail(name: str) -> dict[str, Any] | None:
+        sources = db.rows(
+            "SELECT source AS monster, COUNT(*) AS drops, "
+            "COUNT(DISTINCT encounter_id) AS encounters "
+            "FROM loot_drops WHERE activity = ? GROUP BY source ORDER BY encounters DESC, drops DESC",
+            (name,),
+        )
+        items = db.rows(
+            "SELECT item, COUNT(*) AS drops FROM loot_drops WHERE activity = ? "
+            "GROUP BY item ORDER BY drops DESC",
+            (name,),
+        )
+        zones = db.rows(
+            "SELECT zone, COUNT(*) AS drops FROM loot_drops WHERE activity = ? "
+            "GROUP BY zone ORDER BY drops DESC",
+            (name,),
+        )
+        return {"activity": name, "sources": sources, "items": items, "zones": zones}
+
+    # --- chart aggregations --------------------------------------------------
+
+    def _axis_filter(
+        source: str | None, item: str | None, zone: str | None, activity: str | None
+    ) -> tuple[str, list[Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if source:
+            clauses.append("ld.source = ?")
+            params.append(source)
+        if item:
+            clauses.append("ld.item = ?")
+            params.append(item)
+        if zone:
+            clauses.append("ld.zone = ?")
+            params.append(zone)
+        if activity:
+            clauses.append("ld.activity = ?")
+            params.append(activity)
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        return where, params
+
+    @router.get("/analysis/sources")
+    def analysis_sources(
+        source: str | None = None,
+        item: str | None = None,
+        zone: str | None = None,
+        activity: str | None = None,
+        status: str | None = "Linked",
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        where, params = _axis_filter(source, item, zone, activity)
+        if status:
+            status_clause = "ld.status = ?"
+            where = where + " AND " + status_clause if where else "WHERE " + status_clause
+            params.insert(0, status)
+        encounters = "COUNT(DISTINCT ld.encounter_id)"
+        rate = f"ROUND(CAST(COUNT(*) AS REAL) / NULLIF({encounters}, 0), 4)"
+        rows = db.rows(
+            "SELECT ld.source AS monster, COUNT(*) AS drops, SUM(ld.amount) AS quantity, "
+            f"{encounters} AS encounters, "
+            f"{rate} AS drop_rate "
+            f"FROM loot_drops ld {where} GROUP BY ld.source ORDER BY drops DESC LIMIT ?",
+            tuple(params) + (max(1, min(limit, 500)),),
+        )
+        return rows
+
+    @router.get("/analysis/zones")
+    def analysis_zones(
+        source: str | None = None,
+        item: str | None = None,
+        activity: str | None = None,
+        status: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        where, params = _axis_filter(source, item, None, activity)
+        if status:
+            status_clause = "ld.status = ?"
+            where = where + " AND " + status_clause if where else "WHERE " + status_clause
+            params.insert(0, status)
+        rows = db.rows(
+            f"SELECT ld.zone, COUNT(*) AS drops, COUNT(DISTINCT ld.source) AS sources FROM loot_drops ld "
+            f"{where} GROUP BY ld.zone ORDER BY drops DESC LIMIT ?",
+            tuple(params) + (max(1, min(limit, 500)),),
+        )
+        return rows
+
+    @router.get("/analysis/items")
+    def analysis_items(
+        source: str | None = None,
+        zone: str | None = None,
+        activity: str | None = None,
+        status: str | None = "Linked",
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        where, params = _axis_filter(source, None, zone, activity)
+        if status:
+            status_clause = "ld.status = ?"
+            where = where + " AND " + status_clause if where else "WHERE " + status_clause
+            params.insert(0, status)
+        rows = db.rows(
+            f"SELECT ld.item, COUNT(*) AS drops, COUNT(DISTINCT ld.source) AS sources FROM loot_drops ld "
+            f"{where} GROUP BY ld.item ORDER BY drops DESC LIMIT ?",
+            tuple(params) + (max(1, min(limit, 500)),),
+        )
+        return rows
 
     # --- live SSE streams ---------------------------------------------------
 
@@ -179,8 +474,14 @@ def build_read_router(db_path: str, include_index: bool = True) -> tuple[APIRout
             endpoints = [
                 "/health",
                 "/sessions",
+                "/distinct",
                 "/summary",
-                "/drop-rates?monster=X&item=Y",
+                "/drop-rates",
+                "/search?q=X",
+                "/source/{name}",
+                "/item/{name}",
+                "/activity/{name}",
+                "/analysis/sources|zones|items",
                 "/loot?limit_rows=200",
             ]
             return {"service": "gorgon-tracker", "endpoints": endpoints}

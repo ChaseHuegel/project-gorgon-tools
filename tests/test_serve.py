@@ -53,6 +53,51 @@ def test_endpoints_serve_read_only(tmp_path: Path) -> None:
     assert "id" in loot[0]
 
 
+def test_analysis_endpoints_and_filters(tmp_path: Path) -> None:
+    db_path = _populated(tmp_path)
+    client = TestClient(serve.build_app(str(db_path)))
+
+    distinct = client.get("/distinct").json()
+    assert "Giant Bat" in distinct["sources"]
+    assert "Dire Wolf" in distinct["sources"]
+    assert "Bat Guano" in distinct["items"]
+    assert "Looting" in distinct["activities"]
+    assert any(z in distinct["zones"] for z in ("Old Graveyard", "Fairy Glen"))
+
+    search = client.get("/search", params={"q": "Bat"}).json()
+    assert any(s["name"] == "Giant Bat" for s in search["sources"])
+    assert any(i["name"] == "Bat Guano" for i in search["items"])
+    activity_hits = client.get("/search", params={"q": "Loot"}).json()
+    assert any(a["name"] == "Looting" for a in activity_hits["activities"])
+
+    source = client.get("/source/Giant Bat").json()
+    assert source["source"] == "Giant Bat"
+    assert any(i["item"] == "Bat Guano" for i in source["items"])
+    assert source["zones"]
+
+    item = client.get("/item/Bat Guano").json()
+    assert item["item"] == "Bat Guano"
+    assert any(s["monster"] == "Giant Bat" for s in item["sources"])
+
+    activity = client.get("/activity/Looting").json()
+    assert activity["activity"] == "Looting"
+    assert activity["sources"] and activity["items"] and activity["zones"]
+
+    sources = client.get("/analysis/sources").json()
+    assert any(m["monster"] == "Giant Bat" for m in sources)
+    zones = client.get("/analysis/zones").json()
+    assert any(z["zone"] == "Old Graveyard" for z in zones)
+    items = client.get("/analysis/items").json()
+    assert any(i["item"] == "Bat Guano" for i in items)
+
+    zoned = client.get("/drop-rates", params={"zone": "Old Graveyard"}).json()
+    assert zoned and all(r["monster"] == "Giant Bat" for r in zoned)
+    ranked = client.get("/drop-rates", params={"sort": "drops", "order": "desc", "limit": 2}).json()
+    assert len(ranked) == 2
+    assert ranked[0]["drops"] >= ranked[1]["drops"]
+    assert len(client.get("/summary", params={"source": "Dire"}).json()) > 0
+
+
 def test_loot_endpoint_exposes_evidence_and_filters(tmp_path: Path) -> None:
     db_path = _populated(tmp_path)
     client = TestClient(serve.build_app(str(db_path)))

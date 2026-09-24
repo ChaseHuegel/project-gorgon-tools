@@ -1,11 +1,14 @@
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
 
 interface Column<T> {
   key: string;
   header: string;
   render: (row: T) => React.ReactNode;
   align?: "left" | "right";
+  sortValue?: (row: T) => string | number;
 }
+
+type SortDir = "asc" | "desc";
 
 export function DataTable<T>({
   columns,
@@ -18,6 +21,21 @@ export function DataTable<T>({
   empty?: string;
   detail?: (row: T) => React.ReactNode;
 }) {
+  const [sortKey, setSortKey] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+
+  const sorted = useSortedRows(rows, columns, sortKey, sortDir);
+
+  function toggleSort(col: Column<T>) {
+    if (!col.sortValue) return;
+    if (sortKey === col.key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(col.key);
+      setSortDir("asc");
+    }
+  }
+
   if (rows.length === 0) return <p style={{ color: "var(--muted)" }}>{empty}</p>;
   return (
     <div style={{ overflowX: "auto" }}>
@@ -31,22 +49,34 @@ export function DataTable<T>({
       >
         <thead>
           <tr style={{ background: "var(--panel)" }}>
-            {columns.map((c) => (
-              <th
-                key={c.key}
-                style={{
-                  textAlign: c.align ?? "left",
-                  padding: "0.5rem 0.75rem",
-                  borderBottom: "1px solid var(--border)",
-                }}
-              >
-                {c.header}
-              </th>
-            ))}
+            {columns.map((c) => {
+              const active = sortKey === c.key;
+              const canSort = Boolean(c.sortValue);
+              return (
+                <th
+                  key={c.key}
+                  style={{
+                    textAlign: c.align ?? "left",
+                    padding: "0.5rem 0.75rem",
+                    borderBottom: "1px solid var(--border)",
+                    cursor: canSort ? "pointer" : undefined,
+                    userSelect: canSort ? "none" : undefined,
+                    color: active ? "var(--accent)" : undefined,
+                  }}
+                  onClick={canSort ? () => toggleSort(c) : undefined}
+                  title={canSort ? "Sort" : undefined}
+                >
+                  {c.header}
+                  {active && (
+                    <span style={{ marginLeft: "0.3rem" }}>{sortDir === "asc" ? "▲" : "▼"}</span>
+                  )}
+                </th>
+              );
+            })}
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, i) => (
+          {sorted.map((row, i) => (
             <Fragment key={i}>
               <tr style={{ borderBottom: "1px solid var(--border)" }}>
                 {columns.map((c) => (
@@ -73,8 +103,32 @@ export function DataTable<T>({
           ))}
         </tbody>
       </table>
+      {columns.some((c) => c.sortValue) && (
+        <p style={{ color: "var(--muted)", fontSize: "0.75rem", marginTop: "0.35rem" }}>
+          Click a column header to sort.
+        </p>
+      )}
     </div>
   );
+}
+
+function useSortedRows<T>(
+  rows: T[],
+  columns: Column<T>[],
+  sortKey: string | null,
+  sortDir: SortDir,
+): T[] {
+  const col = columns.find((c) => c.key === sortKey);
+  if (!col?.sortValue) return rows;
+  const val = (r: T) => col.sortValue!(r);
+  const sign = sortDir === "asc" ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const av = val(a);
+    const bv = val(b);
+    if (av === bv) return 0;
+    if (typeof av === "number" && typeof bv === "number") return (av - bv) * sign;
+    return String(av).localeCompare(String(bv)) * sign;
+  });
 }
 
 export function fmtTime(ms: number | null | undefined): string {
