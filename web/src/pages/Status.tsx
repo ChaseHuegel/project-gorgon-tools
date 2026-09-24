@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { api } from "../api/client";
-import type { ChatLine, Status } from "../api/types";
+import { api, streamUrl } from "../api/client";
+import type { ChatLine, Status, StatusStreamPayload } from "../api/types";
 import { Page } from "../components/Page";
 import { StatusBadge } from "../components/StatusBadge";
 import { useApiData, useStatus } from "../hooks/useApi";
+import { useSse } from "../hooks/useSse";
 
 export default function StatusPage() {
   const { data, loading, error, reload } = useStatus();
+  const [liveCounts, setLiveCounts] = useState<Record<string, number> | null | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -21,7 +23,14 @@ export default function StatusPage() {
     }
   }, [chat, follow]);
 
-  const status = data as Status | null;
+  const status = (data as Status) ?? null;
+
+  useSse<StatusStreamPayload>({
+    url: streamUrl("status"),
+    event: "status",
+    enabled: Boolean(status?.open_session_id),
+    onEvent: (p) => setLiveCounts(p.open_session_counts),
+  });
 
   async function toggle() {
     if (!status) return;
@@ -41,7 +50,7 @@ export default function StatusPage() {
   if (loading && !status) return <p>Loading status…</p>;
   if (!status) return <p style={{ color: "var(--red)" }}>Status unavailable: {error ?? "no data"}</p>;
 
-  const counts = status.open_session_counts;
+  const counts = liveCounts !== undefined ? liveCounts : status.open_session_counts;
 
   return (
     <Page

@@ -36,6 +36,9 @@ function query(params: Record<string, string | number | undefined>): string {
 
 export const exportUrl = (since?: string): string => `/export${query({ since })}`;
 
+export const streamUrl = (kind: "loot" | "events" | "status", since?: number): string =>
+  `/api/stream/${kind}${query({ since })}`;
+
 export const api = {
   status: () => request<Status>("/api/status"),
 

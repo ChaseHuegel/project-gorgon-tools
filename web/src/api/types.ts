@@ -82,6 +82,7 @@ export interface DropRateRow {
 }
 
 export interface LootRow {
+  id: number;
   captured_at: number;
   source: string;
   activity: string;
@@ -90,6 +91,19 @@ export interface LootRow {
   zone: string;
   status: string;
   lag_ms: number;
+}
+
+export interface RawEventRow {
+  id: number;
+  session_id: number;
+  source: string;
+  captured_at: number;
+  payload: Record<string, unknown>;
+}
+
+export interface StatusStreamPayload {
+  open_session_id: number | null;
+  open_session_counts: Record<string, number> | null;
 }
 
 export interface PortsDiscover {

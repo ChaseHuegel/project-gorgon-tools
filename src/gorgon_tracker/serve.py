@@ -10,14 +10,18 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, Request
+from fastapi.responses import StreamingResponse
+
+from . import db as db_mod
+from . import stream
 
 _QUERIES: dict[str, str] = {
     "sessions": "SELECT id, uuid, started_at, ended_at, platform FROM sessions ORDER BY started_at DESC",
     "summary": "SELECT * FROM v_summary ORDER BY zone, monster, item",
     "drop_rates": "SELECT * FROM v_drop_rates",
     "loot": (
-        "SELECT ld.captured_at, ld.source, ld.activity, ld.item, ld.amount, ld.zone, ld.status, ld.lag_ms "
+        "SELECT ld.id, ld.captured_at, ld.source, ld.activity, ld.item, ld.amount, ld.zone, ld.status, ld.lag_ms "
         "FROM loot_drops ld ORDER BY ld.captured_at DESC LIMIT ?"
     ),
 }
@@ -39,6 +43,13 @@ class _DB:
         conn = self.connect()
         try:
             return [dict(r) for r in conn.execute(query, params)]
+        finally:
+            conn.close()
+
+    def status(self) -> dict[str, Any]:
+        conn = self.connect()
+        try:
+            return db_mod.status_overview(conn)
         finally:
             conn.close()
 
@@ -76,6 +87,43 @@ def build_read_router(db_path: str, include_index: bool = True) -> tuple[APIRout
     @router.get("/loot")
     def loot(limit_rows: int = 200) -> list[dict[str, Any]]:
         return db.rows(_QUERIES["loot"], (max(1, min(limit_rows, 5000)),))
+
+    # --- live SSE streams ---------------------------------------------------
+
+    def _stream(generator: Any) -> StreamingResponse:
+        return StreamingResponse(
+            generator,
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    @router.get("/stream/loot")
+    def stream_loot(request: Request, since: int | None = None, poll_s: float | None = None) -> StreamingResponse:
+        return _stream(
+            stream.loot_stream(
+                db, since_id=since, poll_s=poll_s or stream._POLL_S, is_disconnected=request.is_disconnected
+            )
+        )
+
+    @router.get("/stream/events")
+    def stream_events(request: Request, since: int | None = None, poll_s: float | None = None) -> StreamingResponse:
+        return _stream(
+            stream.events_stream(
+                db, since_id=since, poll_s=poll_s or stream._POLL_S, is_disconnected=request.is_disconnected
+            )
+        )
+
+    @router.get("/stream/status")
+    def stream_status(request: Request, since: int | None = None, poll_s: float | None = None) -> StreamingResponse:
+        return _stream(
+            stream.status_stream(
+                db, since_id=since, poll_s=poll_s or stream._STATUS_POLL_S, is_disconnected=request.is_disconnected
+            )
+        )
 
     if include_index:
 

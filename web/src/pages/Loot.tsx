@@ -1,28 +1,48 @@
-import { useMemo, useState } from "react";
-import { api, exportUrl } from "../api/client";
+import { useMemo, useRef, useState } from "react";
+import { api, exportUrl, streamUrl } from "../api/client";
 import type { LootRow } from "../api/types";
 import { DataTable, fmtTime } from "../components/DataTable";
 import { Page } from "../components/Page";
 import { useApiData } from "../hooks/useApi";
+import { useSse } from "../hooks/useSse";
 
 export default function LootPage() {
   const { data, error, loading } = useApiData(() => api.loot(1000));
+  const [live, setLive] = useState<LootRow[]>([]);
   const [monster, setMonster] = useState("");
   const [item, setItem] = useState("");
   const [activity, setActivity] = useState("");
   const [status, setStatus] = useState("");
+  const lastIdRef = useRef(0);
+
+  const maxId = useMemo(() => {
+    const ids = [lastIdRef.current, ...(data ?? []).map((r) => r.id)];
+    return Math.max(...ids);
+  }, [data]);
+
+  useSse<LootRow>({
+    url: streamUrl("loot", maxId),
+    event: "loot",
+    enabled: maxId > 0,
+    onEvent: (row) =>
+      setLive((prev) => {
+        lastIdRef.current = Math.max(lastIdRef.current, row.id);
+        if (prev.some((r) => r.id === row.id)) return prev;
+        return [row, ...prev];
+      }),
+  });
 
   const rows = useMemo(() => {
-    let list = data ?? [];
+    let list = [...live, ...(data ?? [])];
     if (monster) list = list.filter((r) => r.source.includes(monster));
     if (item) list = list.filter((r) => r.item.toLowerCase().includes(item.toLowerCase()));
     if (activity) list = list.filter((r) => r.activity === activity);
     if (status) list = list.filter((r) => r.status === status);
     return list;
-  }, [data, monster, item, activity, status]);
+  }, [live, data, monster, item, activity, status]);
 
   const distinct = (pick: (r: LootRow) => string) => [
-    ...new Set((data ?? []).map(pick).filter(Boolean)),
+    ...new Set([...(live ?? []), ...(data ?? [])].map(pick).filter(Boolean)),
   ].sort();
 
   return (
