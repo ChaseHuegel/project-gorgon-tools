@@ -9,11 +9,15 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Body, FastAPI, File, Form, HTTPException, Response, UploadFile
+from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
 from . import config_write as config_write_mod
 from . import control, db
 from .serve import build_read_router
+
+_APP_ROOT = Path(__file__).resolve().parent
+_STATIC_DIR = _APP_ROOT / "static"
 
 
 def _upload_dir(db_path: str) -> Path:
@@ -221,14 +225,39 @@ def build_control_router(db_path: str, config_path: str | None = None) -> APIRou
     return router
 
 
-def build_web_app(db_path: str, config_path: str | None = None) -> FastAPI:
-    """Build the full UI FastAPI app (read API + control endpoints)."""
-    read_router, _ = build_read_router(db_path)
+def build_web_app(db_path: str, config_path: str | None = None, static_dir: Path | None = None) -> FastAPI:
+    """Build the full UI FastAPI app (read API + control endpoints + SPA)."""
+    read_router, _ = build_read_router(db_path, include_index=False)
     app = FastAPI(title="gorgon-tracker UI", version="0.1.0", description="Project Gorgon loot data")
     app.include_router(read_router)
     app.include_router(build_control_router(db_path, config_path))
     _ensure_schema(db_path)
+    static = static_dir or _STATIC_DIR
+    if static.is_dir():
+        _mount_spa(app, static)
     return app
+
+
+def _mount_spa(app: FastAPI, static_dir: Path) -> None:
+    """Serve the Vite build and fall back to ``index.html`` for client routes."""
+    index_html = (static_dir / "index.html").read_bytes()
+    assets = static_dir / "assets"
+    if assets.is_dir():
+        app.mount("/assets", StaticFiles(directory=str(assets)), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def spa(full_path: str) -> Response:
+        if full_path.split("/")[0] == "api":
+            raise HTTPException(status_code=404, detail="unknown API route")
+        if full_path and (static_dir / full_path).is_file():
+            return Response((static_dir / full_path).read_bytes(), media_type=_guess_media(full_path))
+        return Response(index_html, media_type="text/html")
+
+
+def _guess_media(path: str) -> str:
+    import mimetypes
+
+    return mimetypes.guess_type(path)[0] or "application/octet-stream"
 
 
 def _ensure_schema(db_path: str) -> None:

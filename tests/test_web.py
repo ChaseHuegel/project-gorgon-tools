@@ -88,3 +88,25 @@ def test_web_app_mounts_read_endpoints(tmp_path: Path) -> None:
 def test_build_read_router_api_health_isolation(tmp_path: Path) -> None:
     client = TestClient(build_web_app(str(tmp_path / "data/gorgon.db"), None))
     assert client.get("/loot").json() == []
+
+
+def test_spa_served_with_fallback_and_api_404(tmp_path: Path) -> None:
+    static = tmp_path / "static"
+    static.mkdir()
+    (static / "index.html").write_text("<html>UI</html>")
+    (static / "assets").mkdir()
+    (static / "assets" / "app.js").write_text("console.log('x')")
+
+    client = TestClient(build_web_app(str(tmp_path / "data/gorgon.db"), None, static_dir=static))
+
+    root = client.get("/")
+    assert root.status_code == 200 and root.text == "<html>UI</html>"
+
+    fallback = client.get("/sessions/view")
+    assert fallback.status_code == 200 and fallback.text == "<html>UI</html>"
+
+    asset = client.get("/assets/app.js")
+    assert asset.status_code == 200 and asset.text == "console.log('x')"
+
+    api = client.get("/api/nope")
+    assert api.status_code == 404

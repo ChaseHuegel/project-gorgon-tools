@@ -43,7 +43,7 @@ class _DB:
             conn.close()
 
 
-def build_read_router(db_path: str) -> tuple[APIRouter, _DB]:
+def build_read_router(db_path: str, include_index: bool = True) -> tuple[APIRouter, _DB]:
     """Create the shared read-only router plus its DB dependency handle."""
     db = _DB(db_path)
     router = APIRouter()
@@ -77,16 +77,18 @@ def build_read_router(db_path: str) -> tuple[APIRouter, _DB]:
     def loot(limit_rows: int = 200) -> list[dict[str, Any]]:
         return db.rows(_QUERIES["loot"], (max(1, min(limit_rows, 5000)),))
 
-    @router.get("/")
-    def index() -> dict[str, Any]:
-        endpoints = [
-            "/health",
-            "/sessions",
-            "/summary",
-            "/drop-rates?monster=X&item=Y",
-            "/loot?limit_rows=200",
-        ]
-        return {"service": "gorgon-tracker", "endpoints": endpoints}
+    if include_index:
+
+        @router.get("/")
+        def index() -> dict[str, Any]:
+            endpoints = [
+                "/health",
+                "/sessions",
+                "/summary",
+                "/drop-rates?monster=X&item=Y",
+                "/loot?limit_rows=200",
+            ]
+            return {"service": "gorgon-tracker", "endpoints": endpoints}
 
     return router, db
 

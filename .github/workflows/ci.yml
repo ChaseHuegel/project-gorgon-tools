@@ -26,3 +26,27 @@ jobs:
         run: mypy src/gorgon_tracker
       - name: Test
         run: pytest
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install
+        run: npm ci
+        working-directory: web
+      - name: Type check
+        run: npm run typecheck
+        working-directory: web
+      - name: Unit tests
+        run: npm run test
+        working-directory: web
+      - name: Build
+        run: npm run build
+        working-directory: web
+      - name: Verify SPA is packaged
+        run: python -c "from gorgon_tracker.web import build_web_app; from gorgon_tracker import web; import importlib, pathlib; assert (pathlib.Path(web.__file__).parent/'static').is_dir(); print('static built')"

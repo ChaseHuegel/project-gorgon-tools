@@ -40,7 +40,7 @@ gorgon-tracker = "gorgon_tracker.cli:app"
 where = ["src"]
 
 [tool.setuptools.package-data]
-gorgon_tracker = ["*.sql"]
+gorgon_tracker = ["*.sql", "static/index.html", "static/assets/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

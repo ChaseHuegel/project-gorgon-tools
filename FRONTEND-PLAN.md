@@ -200,11 +200,11 @@ Agents working on this project must update this section. Mark items `[x]` only w
 - [x] Exit criteria: uploads land in temp dir and drive replay/migrate identically to paths (`[be]`)
 
 ### Phase 3 — Static serving + Vite scaffold
-- [ ] FastAPI serves `src/gorgon_tracker/static/` with SPA history fallback (`[be]`)
-- [ ] Vite project: React+TS, dev proxy `/api`→8000, `outDir`→`../src/gorgon_tracker/static` (`[fe]`)
-- [ ] Packaging: `package-data` includes `static/**`; gitignore built static (`[be]`)
-- [ ] CI Node job: `npm ci && npm run build && npm run test && tsc` (`[be]`)
-- [ ] Exit criteria: `npm run build` produces a static dir FastAPI serves; pip package installs + serves the SPA (`[be][fe]`)
+- [x] FastAPI serves `src/gorgon_tracker/static/` with SPA history fallback (`[be]`)
+- [x] Vite project: React+TS, dev proxy `/api`→8000, `outDir`→`../src/gorgon_tracker/static` (`[fe]`)
+- [x] Packaging: `package-data` includes `static/**`; gitignore built static (`[be]`)
+- [x] CI Node job: `npm ci && npm run build && npm run test && tsc` (`[be]`)
+- [x] Exit criteria: `npm run build` produces a static dir FastAPI serves; pip package installs + serves the SPA (`[be][fe]`)
 
 ### Phase 4 — Status, Dashboard, Loot pages
 - [ ] `api/client.ts`, `api/types.ts`, `hooks/useConfig`, `useDaemon`, `useStatus` (polling), `useApiData`, `useUpload` (`[fe]`)
