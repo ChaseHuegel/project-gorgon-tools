@@ -69,7 +69,10 @@ capture daemon, and lets you browse loot data — no terminal needed for everyda
 
 - **Status** — start/stop the daemon, live per-source event counts, setup warnings, and a
   live **tailed chat log** panel (raw game chat, with loot/bury lines highlighted).
-- **Dashboard** — drop-rate charts and summary tables (via Recharts).
+- **Dashboard** — tabbed drop-rate analytics: overview KPI cards and rate-first charts, a filterable and
+  paginated rates/summary view, a search-first item finder with drill-downs into sources/items/zones/activities,
+  and a monster × item rate matrix heatmap. Filters and the active tab live in the URL (shareable), results
+  export to CSV (via Recharts).
 - **Loot** — filter a stream of correlated drops; export to the legacy CSV.
 - **Sessions** — browse capture sessions and their timing.
 - **Config** — edit `gorgon-tracker.toml` from forms (only changed keys are written,

@@ -111,6 +111,71 @@ def test_analysis_endpoints_and_filters(tmp_path: Path) -> None:
     assert len(client.get("/api/summary", params={"source": "Dire"}).json()) > 0
 
 
+def test_zone_and_stats_endpoints(tmp_path: Path) -> None:
+    db_path = _populated(tmp_path)
+    client = TestClient(serve.build_app(str(db_path)))
+
+    zone = client.get("/api/zone/Old Graveyard").json()
+    assert zone["zone"] == "Old Graveyard"
+    assert any(s["monster"] == "Giant Bat" for s in zone["sources"])
+    assert any(i["item"] == "Bat Guano" for i in zone["items"])
+    assert zone["activities"]
+
+    other = client.get("/api/zone/Unknown").json()
+    assert other["zone"] == "Unknown"
+    assert other["sources"] == []
+
+    stats = client.get("/api/stats").json()
+    assert stats["drops"] == 4
+    assert stats["quantity"] >= 4
+    assert stats["sources"] >= 2
+    assert stats["items"] >= 4
+    assert stats["zones"] == 2
+    assert stats["encounters"] > 0
+    assert stats["linked"] == 4
+    assert stats["orphaned"] == 0
+
+    filtered = client.get("/api/stats", params={"zone": "Old Graveyard"}).json()
+    assert filtered["items"] == 1
+    assert filtered["sources"] == 1
+
+
+def test_drop_rates_since_offset_and_multi(tmp_path: Path) -> None:
+    from .scenario import at
+
+    db_path = _populated(tmp_path)
+    client = TestClient(serve.build_app(str(db_path)))
+
+    all_rates = client.get("/api/drop-rates").json()
+    assert all("last_seen" in r for r in all_rates)
+    assert all("last_seen" in r for r in client.get("/api/summary").json())
+
+    late = client.get("/api/drop-rates", params={"since": at(25)}).json()
+    assert late == []
+
+    mid = client.get("/api/drop-rates", params={"since": at(14)}).json()
+    assert 0 < len(mid) < len(all_rates)
+    assert all(r["last_seen"] >= at(14) for r in mid)
+
+    multi = client.get("/api/drop-rates", params={"monsters": "Giant Bat, Dire Wolf"}).json()
+    assert len(multi) == len(all_rates)
+    assert all(r["monster"] in {"Giant Bat", "Dire Wolf"} for r in multi)
+
+    only_bat = client.get("/api/drop-rates", params={"monsters": "Giant Bat"}).json()
+    assert len(only_bat) == 2 and all(r["monster"] == "Giant Bat" for r in only_bat)
+    assert len(client.get("/api/drop-rates", params={"items": "Bat Guano"}).json()) == 1
+    assert len(client.get("/api/drop-rates", params={"monsters": "Giant Bat", "items": "Bat Guano"}).json()) == 1
+
+    page1 = client.get("/api/drop-rates", params={"limit": 2, "offset": 0}).json()
+    page2 = client.get("/api/drop-rates", params={"limit": 2, "offset": 2}).json()
+    assert len(page1) == 2 and len(page2) == 2
+    assert {r["item"] for r in page1} | {r["item"] for r in page2} == {r["item"] for r in all_rates}
+
+    hits = client.get("/api/search", params={"q": "Bat"}).json()
+    assert any("last_seen" in s for s in hits["sources"])
+    assert any("last_seen" in i for i in hits["items"])
+
+
 def test_loot_endpoint_exposes_evidence_and_filters(tmp_path: Path) -> None:
     db_path = _populated(tmp_path)
     client = TestClient(serve.build_app(str(db_path)))

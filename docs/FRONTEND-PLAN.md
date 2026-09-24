@@ -234,3 +234,13 @@ Agents working on this project must update this section. Mark items `[x]` only w
 - [x] Status page: live **tailed chat log** panel — `GET /api/chat/tail` reads the newest chat log in `chat.log_dir` (same file the daemon tails), returns the last N raw lines with per-line `loot`/`bury` classification, and degrades gracefully (`found: false` + reason) when the dir/path is unresolvable. Frontend polls every 1.5s with a follow/auto-scroll toggle.
 - [ ] Optional auth/remote option if `--host 0.0.0.0` is used (reverse proxy or token).
 - [ ] Code-split the recharts-heavy Dashboard bundle (Current: single ~150 kB chunk; consider `React.lazy`).
+
+### Phase 7 — Dashboard analysis revamp (analyze / explore / find)
+- [x] Read API: `since`/`until` time filters, `last_seen`, `offset` pagination (`[be]`)
+- [x] New endpoints: `/api/stats`, `/api/zone/{name}`, comma-list `monsters`/`items` for `/api/drop-rates` matrix queries (`[be]`)
+- [x] `GET /api/export/analysis` CSV of the filtered drop-rate table (`[be]`)
+- [x] Backend tests for time filters, last-seen, zone/stats, matrix lists, pagination, CSV export (`[be]`)
+- [x] Dashboard rebuilt as Overview / Rates / Find / Matrix tabs with filters + active tab synced to the URL (`[fe]`)
+- [x] Rate-first charts, KPI stat cards, confidence badges (sample-size-aware), clickable cell drill-downs (`[fe]`)
+- [x] Type-ahead search with keyboard nav, drill-down cross-links (source/item/zone/activity), rate matrix heatmap, `DataTable` pagination (`[fe]`)
+- [x] Exit criteria: `pytest`, `vitest`, `tsc`, `ruff`, `mypy` green; SPA smoke-tested against a populated DB (`[be][fe]`)

@@ -16,16 +16,22 @@ export function DataTable<T>({
   rows,
   empty = "No rows.",
   detail,
+  pageSize,
 }: {
   columns: Column<T>[];
   rows: T[];
   empty?: string;
   detail?: (row: T) => React.ReactNode;
+  pageSize?: number;
 }) {
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [page, setPage] = useState(1);
 
   const sorted = useSortedRows(rows, columns, sortKey, sortDir);
+  const pageCount = pageSize && pageSize > 0 ? Math.max(1, Math.ceil(sorted.length / pageSize)) : 1;
+  const current = Math.min(page, pageCount);
+  const visible = pageSize && pageSize > 0 ? sorted.slice((current - 1) * pageSize, current * pageSize) : sorted;
 
   function toggleSort(col: Column<T>) {
     if (!col.sortValue) return;
@@ -35,6 +41,7 @@ export function DataTable<T>({
       setSortKey(col.key);
       setSortDir("asc");
     }
+    setPage(1);
   }
 
   if (rows.length === 0) return <p style={{ color: "var(--muted)" }}>{empty}</p>;
@@ -77,7 +84,7 @@ export function DataTable<T>({
           </tr>
         </thead>
         <tbody>
-          {sorted.map((row, i) => (
+          {visible.map((row, i) => (
             <Fragment key={i}>
               <tr style={{ borderBottom: "1px solid var(--border)" }}>
                 {columns.map((c) => (
@@ -109,9 +116,39 @@ export function DataTable<T>({
           Click a column header to sort.
         </p>
       )}
+      {pageSize && pageSize > 0 && pageCount > 1 && (
+        <div style={{ display: "flex", gap: "0.6rem", alignItems: "center", marginTop: "0.5rem" }}>
+          <button
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={current <= 1}
+            style={pageBtnStyle}
+          >
+            Prev
+          </button>
+          <span style={{ color: "var(--muted)", fontSize: "0.8rem" }}>
+            Page {current} of {pageCount} · {sorted.length} rows
+          </span>
+          <button
+            onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+            disabled={current >= pageCount}
+            style={pageBtnStyle}
+          >
+            Next
+          </button>
+        </div>
+      )}
     </div>
   );
 }
+
+const pageBtnStyle: React.CSSProperties = {
+  border: "1px solid var(--border)",
+  background: "var(--panel)",
+  color: "var(--text)",
+  borderRadius: 6,
+  padding: "0.25rem 0.6rem",
+  cursor: "pointer",
+};
 
 function useSortedRows<T>(
   rows: T[],

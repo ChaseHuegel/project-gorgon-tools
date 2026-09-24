@@ -18,9 +18,11 @@ import type {
   Session,
   SourceAgg,
   SourceDetail,
+  Stats,
   Status,
   SummaryRow,
   ZoneCount,
+  ZoneDetail,
 } from "./types";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -47,6 +49,9 @@ function query(params: object): string {
 
 export const exportUrl = (since?: string): string => `/api/export${query({ since })}`;
 
+export const exportAnalysisUrl = (params: ExportAnalysisParams = {}): string =>
+  `/api/export/analysis${query(params)}`;
+
 export const streamUrl = (kind: "loot" | "events" | "status", since?: number): string =>
   `/api/stream/${kind}${query({ since })}`;
 
@@ -59,6 +64,11 @@ export interface DropRateParams {
   sort?: string;
   order?: "asc" | "desc";
   limit?: number;
+  offset?: number;
+  since?: number;
+  until?: number;
+  monsters?: string;
+  items?: string;
 }
 
 export interface AnalysisSourceParams {
@@ -68,6 +78,29 @@ export interface AnalysisSourceParams {
   activity?: string;
   status?: string;
   limit?: number;
+  since?: number;
+  until?: number;
+}
+
+export interface StatsParams {
+  source?: string;
+  item?: string;
+  zone?: string;
+  activity?: string;
+  since?: number;
+  until?: number;
+}
+
+export interface ExportAnalysisParams {
+  source?: string;
+  item?: string;
+  zone?: string;
+  activity?: string;
+  status?: string;
+  since?: string;
+  until?: string;
+  sort?: string;
+  order?: "asc" | "desc";
 }
 
 export const api = {
@@ -83,7 +116,7 @@ export const api = {
 
   sessions: () => request<Session[]>("/api/sessions"),
   summary: (
-    params: { source?: string; item?: string; zone?: string; activity?: string } = {},
+    params: { source?: string; item?: string; zone?: string; activity?: string; since?: number; until?: number } = {},
   ) => request<SummaryRow[]>(`/api/summary${query(params)}`),
   dropRates: (params: DropRateParams = {}) =>
     request<DropRateRow[]>(`/api/drop-rates${query(params)}`),
@@ -108,12 +141,18 @@ export const api = {
   clearData: () => request<{ ok: boolean; cleared: Record<string, number> }>("/api/data/clear", { method: "POST" }),
 
   distinct: () => request<DistinctValues>("/api/distinct"),
-  search: (q: string) => request<SearchResults>(`/api/search${query({ q })}`),
-  sourceDetail: (name: string) =>
-    request<SourceDetail>(`/api/source/${encodeURIComponent(name)}`),
-  itemDetail: (name: string) => request<ItemDetail>(`/api/item/${encodeURIComponent(name)}`),
-  activityDetail: (name: string) =>
-    request<ActivityDetail>(`/api/activity/${encodeURIComponent(name)}`),
+  search: (q: string, since?: number, until?: number) =>
+    request<SearchResults>(`/api/search${query({ q, since, until })}`),
+  sourceDetail: (name: string, since?: number) =>
+    request<SourceDetail>(`/api/source/${encodeURIComponent(name)}${query({ since })}`),
+  itemDetail: (name: string, since?: number) =>
+    request<ItemDetail>(`/api/item/${encodeURIComponent(name)}${query({ since })}`),
+  activityDetail: (name: string, since?: number) =>
+    request<ActivityDetail>(`/api/activity/${encodeURIComponent(name)}${query({ since })}`),
+  zoneDetail: (name: string, since?: number) =>
+    request<ZoneDetail>(`/api/zone/${encodeURIComponent(name)}${query({ since })}`),
+
+  stats: (params: StatsParams = {}) => request<Stats>(`/api/stats${query(params)}`),
 
   analysisSources: (
     params: AnalysisSourceParams = {},

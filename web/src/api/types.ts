@@ -72,6 +72,7 @@ export interface SummaryRow {
   item: string;
   total_quantity: number;
   drop_count: number;
+  last_seen?: number;
 }
 
 export interface DropRateRow {
@@ -81,6 +82,7 @@ export interface DropRateRow {
   quantity: number;
   encounters: number;
   drop_rate: number;
+  last_seen?: number;
 }
 
 export interface DistinctValues {
@@ -95,6 +97,7 @@ export interface SearchMatch {
   drops: number;
   encounters?: number;
   sources?: number;
+  last_seen?: number;
 }
 
 export interface SearchResults {
@@ -107,18 +110,21 @@ export interface ZoneCount {
   zone: string;
   drops: number;
   sources?: number;
+  last_seen?: number;
 }
 
 export interface SourceCount {
   monster: string;
   drops: number;
   encounters: number;
+  last_seen?: number;
 }
 
 export interface ItemCount {
   item: string;
   drops: number;
   sources?: number;
+  last_seen?: number;
 }
 
 export interface SourceDetail {
@@ -138,6 +144,25 @@ export interface ActivityDetail {
   sources: SourceCount[];
   items: ItemCount[];
   zones: ZoneCount[];
+}
+
+export interface ZoneDetail {
+  zone: string;
+  sources: DropRateRow[];
+  items: ItemCount[];
+  activities: { activity: string; drops: number }[];
+}
+
+export interface Stats {
+  drops: number;
+  encounters: number;
+  quantity: number;
+  sources: number;
+  items: number;
+  zones: number;
+  linked: number;
+  orphaned: number;
+  newest_at: number;
 }
 
 export interface SourceAgg {

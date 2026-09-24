@@ -235,6 +235,40 @@ def build_control_router(db_path: str, config_path: str | None = None) -> APIRou
             headers={"Content-Disposition": 'attachment; filename="gorgon-loot.csv"'},
         )
 
+    @router.get("/export/analysis")
+    def export_analysis(
+        source: str | None = None,
+        item: str | None = None,
+        zone: str | None = None,
+        activity: str | None = None,
+        status: str | None = "Linked",
+        since: str | None = None,
+        until: str | None = None,
+        sort: str | None = None,
+        order: str | None = None,
+    ) -> Response:
+        from . import serve as serve_mod
+        from .timeutil import iso_to_ms
+
+        rows = serve_mod._drop_rates(  # noqa: SLF001 - shared internal query builder
+            serve_mod._DB(db_path),  # noqa: SLF001
+            monster=source,
+            item=item,
+            zone=zone,
+            activity=activity,
+            status=status,
+            since=iso_to_ms(since) if since else None,
+            until=iso_to_ms(until) if until else None,
+            sort=sort,
+            order=order,
+        )
+        text = export_mod.export_analysis_rows_text(rows)
+        return Response(
+            text,
+            media_type="text/csv",
+            headers={"Content-Disposition": 'attachment; filename="gorgon-drop-rates.csv"'},
+        )
+
     # --- loot overrides (manual corrections) ---------------------------------
 
     @router.put("/loot/{loot_drop_id}")

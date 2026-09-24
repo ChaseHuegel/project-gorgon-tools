@@ -5,8 +5,9 @@ from __future__ import annotations
 import csv
 import io
 import sqlite3
+from collections.abc import Mapping, Sequence
 from datetime import datetime
-from typing import TextIO
+from typing import Any, TextIO
 
 _HEADER = ["Time", "Source", "ID", "Activity", "Item", "Amount", "Status", "LagTime", "Zone"]
 _EVIDENCE_HEADER = [
@@ -110,4 +111,27 @@ def export_loot_csv_text(
 ) -> str:
     buffer = io.StringIO()
     export_loot_csv(conn, buffer, since_ms, with_evidence=with_evidence)
+    return buffer.getvalue()
+
+
+_ANALYSIS_HEADER = ["Monster", "Item", "Drops", "Quantity", "Encounters", "DropRate", "LastSeen"]
+
+
+def export_analysis_rows_text(rows: Sequence[Mapping[str, Any]]) -> str:
+    """Write pre-aggregated drop-rate rows (from ``serve._drop_rates``) as CSV."""
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(_ANALYSIS_HEADER)
+    for row in rows:
+        writer.writerow(
+            [
+                row.get("monster", ""),
+                row.get("item", ""),
+                row.get("drops", ""),
+                row.get("quantity", ""),
+                row.get("encounters", ""),
+                f"{row.get('drop_rate', 0) * 100:.2f}%" if row.get("drop_rate") is not None else "",
+                _local_time(int(row["last_seen"])) if row.get("last_seen") else "",
+            ]
+        )
     return buffer.getvalue()

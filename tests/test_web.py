@@ -92,6 +92,35 @@ def test_build_read_router_api_health_isolation(tmp_path: Path) -> None:
     assert client.get("/api/loot").json() == []
 
 
+def test_export_analysis_downloads_csv(tmp_path: Path) -> None:
+    from gorgon_tracker import db
+    from gorgon_tracker.config import TrackerConfig
+    from gorgon_tracker.replay import expand_inputs, run_replay
+
+    files = scenario.build(tmp_path)
+    conn = db.connect(tmp_path / "web.db")
+    db.migrate(conn)
+    run_replay(
+        conn,
+        TrackerConfig(),
+        expand_inputs([files.capture_json, files.chat_log, files.zones_csv, files.targets_csv]),
+    )
+    conn.close()
+
+    client = TestClient(build_web_app(str(tmp_path / "web.db"), None))
+    resp = client.get("/api/export/analysis")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/csv")
+    text = resp.text
+    assert text.splitlines()[0] == "Monster,Item,Drops,Quantity,Encounters,DropRate,LastSeen"
+    assert any("Giant Bat,Bat Guano" in line for line in text.splitlines())
+
+    filtered_resp = client.get("/api/export/analysis", params={"source": "Dire Wolf"})
+    assert filtered_resp.status_code == 200
+    assert "Dire Wolf" in filtered_resp.text
+    assert "Giant Bat" not in filtered_resp.text
+
+
 def test_spa_served_with_fallback_and_api_404(tmp_path: Path) -> None:
     static = tmp_path / "static"
     static.mkdir()
