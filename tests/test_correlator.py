@@ -196,6 +196,17 @@ def test_flush_expired_orphans_stale_pending_without_ref_time() -> None:
     assert c.flush_expired(make(30.0)) == []
 
 
+def test_flush_expired_does_not_resurface_in_take_drops() -> None:
+    """Regression: flushed drops must be emitted once, not drained again later."""
+    c = Correlator(buffer_seconds=5.0)
+    c.ingest_loot(loot(0.0, "Twig"))
+    c.ingest_loot(loot(1.0, "Bone"))
+    emitted = c.flush_expired(make(20.0))
+    assert len(emitted) == 2
+    assert c.take_drops() == []  # must not re-deliver already-emitted drops
+    assert c.finalize() == []    # nor via finalize at stream end
+
+
 def test_flush_expired_keeps_recent_pending() -> None:
     c = Correlator(buffer_seconds=10.0)
     c.ingest_loot(loot(5.0, "Bone"))

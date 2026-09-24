@@ -161,7 +161,6 @@ class Correlator:
         if not expired:
             return []
         produced = [self._orphan_drop(d) for d in expired]
-        self.drops.extend(produced)
         self.pending = remaining
         return produced
 
