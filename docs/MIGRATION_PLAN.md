@@ -119,7 +119,15 @@ The timeline algorithm at `loot-tracker/ProjectGorgon-CompileLootEvents.ps1:107-
 **Behavioral rules to preserve exactly:**
 
 - Constants: `BufferSeconds = 10`, `SessionTimeout = 3`, `RetroactiveThreshold = 0.9` (move to config).
-- `Get-OrphanSource(drop_time, targets, buffer)`: best target sighting with `0 <= lag <= buffer`, smallest lag wins; default `"Ground/Unknown"`.
+- Looting requires targeting the entity being looted (corpse or harvestable), so the OCR
+  target window is direct interaction evidence, not combat context:
+  - `TargetFallbackSeconds = 3` — how stale a target sighting may be to compete with (or
+    substitute for) a monster source; older sightings are coincidence risk.
+  - `SearchCorroborationSeconds = 2` — a target-linked drop with a same-name corpse-search
+    packet within this window is corpse loot (`activity=Looting`, `corroborated_by_search`);
+    a target-linked drop without one is a harvestable (`activity=Harvesting`). Flowers/logs/
+    apples have no corpse-search packet, so targets remain their **only** evidence channel.
+- `Get-OrphanSource(drop_time, targets, buffer)`: best target sighting with `0 <= lag <= TargetFallbackSeconds`, smallest lag wins; default `"Ground/Unknown"`.
 - Timeline merged from `Source` (SortPriority 2), `Loot` (1), `Bury` (2), sorted by `Time, SortPriority` (loot before source at equal time).
 - **Loot event** → push to `pending_drops`.
 - **Bury event** → end of encounter: for each pending drop, link to monster if `monster_lag <= BufferSeconds` AND `monster_lag < orphan.lag`, else orphan fallback. `Status = "Linked"|"Orphaned"`; orphan with a known target is still `"Linked"` (source = target name); `"Ground/Unknown"` → `"Orphaned"`. `Activity = "Looting"`. New GUID for each encounter; reset monster + flags.
@@ -127,6 +135,20 @@ The timeline algorithm at `loot-tracker/ProjectGorgon-CompileLootEvents.ps1:107-
 - **End of stream (flush):** remaining pending drops link to `current_monster` / encounter, `Status="Linked"`, `LagTime=0`.
 - **Zone assignment:** walk zone-change timestamps ≤ drop time; start `"Unknown"`.
 - Output columns: `Time, Source, ID, Activity, Item, Amount, Status, LagTime, Zone`.
+
+**Attribution audit trail (`linked_via` + evidence, migration v2):**
+
+Every `loot_drops` row records *why* it was attributed so bad links are visible and fixable:
+
+- `linked_via` = `monster` | `target` | `orphan`; plus `monster_name`, `monster_lag_ms`,
+  `target_name`, `target_lag_ms`, `corroborated_by_search`.
+- The legacy closest-wins ranking is **unchanged**; the target window is capped at
+  `TargetFallbackSeconds` and `status` values are untouched, so historical CSV/golden
+  outputs are byte-identical.
+- `loot_overrides` table stores reversible manual corrections (source/status/activity/note)
+  applied at read time (API `PUT/DELETE /api/loot/{id}`, web Loot page edit controls,
+  CSV export `--with-evidence`). Residual noise (1s chat timestamps, OCR sampling latency)
+  is mitigated through this audit + override layer rather than guessed at correlation time.
 
 ### 3.4 OCR port
 
@@ -364,3 +386,14 @@ Agents working on this project must update this section. Mark items `[x]` only w
 - [ ] Calibrate OCR regions for the live Proton display via `gorgon-tracker calibrate` (needs a display).
 - [ ] Consider a reorder-tolerance buffer in `Correlator` for out-of-order live events (currently correct for in-order ingestion).
 - [ ] Optional: `find-ports --write-config` to persist discovered ports back into `gorgon-tracker.toml`.
+- [ ] Run `gorgon-tracker sniff-inspect` during a scripted looting session (kill, loot-all, skin, butcher, bury, harvest) and inspect `strings.csv`/per-stream dumps for plaintext loot/status messages. If `added to inventory` (or similar) crosses the wire, extend `parsers/packets.py` with a loot decoder feeding ms-exact packet timing into the correlator; otherwise treat the packet path as closed and rely on chat timing + the audit/override layer.
+
+### Correlation audit & hardening (evidence, harvestables, overrides)
+- [x] `CorrelateConfig`: `target_fallback_seconds = 3.0`, `search_corroboration_seconds = 2.0`
+- [x] Correlator: evidence fields on every `LootDrop` (`linked_via`, `monster_name/lag`, `target_name/lag`, `corroborated_by_search`); legacy closest-wins ranking preserved; target sighting window capped; `Harvesting` activity for target-linked drops without a corroborating same-name corpse search
+- [x] Schema v2: `loot_drops` evidence columns + `loot_overrides` table (reversible manual corrections, merged partial updates); migration path from v1 verified
+- [x] API: `/loot` exposes evidence + effective (override-merged) values + `linked_via`/`confidence` filters; `PUT/DELETE /api/loot/{id}` override endpoints (web app only; `serve` stays read-only; SSE loot rows carry evidence)
+- [x] Web: Loot page badges (monster/corroborated target/target-only/orphan), evidence column, confidence filter, inline edit + revert
+- [x] Export: overrides applied; `--with-evidence` appends audit columns (legacy header unchanged by default)
+- [x] `sniff-inspect`: live (raw pcap retained) + offline `--pcap` modes; `strings.csv` token inventory; per-TCP-stream per-direction payload dumps; CLI command + tests
+- [x] Tests/docs: correlator evidence + harvestable classification, db v2 migration + overrides, serve filters, override API, sniff-inspect; MIGRATION_PLAN §3.3 rationale updated

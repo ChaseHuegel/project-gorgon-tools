@@ -88,6 +88,12 @@ class DbWriter:
             drop.zone,
             drop.status,
             drop.lag_ms,
+            linked_via=drop.linked_via,
+            monster_name=drop.monster_name,
+            monster_lag_ms=drop.monster_lag_ms,
+            target_name=drop.target_name,
+            target_lag_ms=drop.target_lag_ms,
+            corroborated_by_search=drop.corroborated_by_search,
         )
 
     def close_encounters(self) -> None:

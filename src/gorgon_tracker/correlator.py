@@ -55,6 +55,13 @@ class LootDrop:
     status: str
     lag_ms: int
     zone: str
+    # -- evidence (audit trail for how this drop was attributed) --------------
+    linked_via: str = "monster"  # "monster" | "target" | "orphan"
+    monster_name: str | None = None
+    monster_lag_ms: int | None = None
+    target_name: str | None = None
+    target_lag_ms: int | None = None
+    corroborated_by_search: bool = False
 
 
 class Correlator:
@@ -68,6 +75,12 @@ class Correlator:
       the same encounter (3s).
     * ``retroactive_threshold``: max seconds a drop may precede a state-change packet
       to be attributed to Skinning/Butchering/Extracting (0.9s).
+    * ``target_fallback_seconds``: how stale a target sighting may be to compete with
+      (or substitute for) a monster source. Looting targets the entity being looted,
+      so fresh sightings are strong evidence; old ones are coincidence risk.
+    * ``search_corroboration_seconds``: a target-linked drop within this many seconds
+      of a same-name corpse-search packet is treated as corpse loot rather than a
+      harvestable (flowers/logs/apples have no corpse-search packet).
     """
 
     def __init__(
@@ -75,13 +88,18 @@ class Correlator:
         buffer_seconds: float = 10.0,
         session_timeout: float = 3.0,
         retroactive_threshold: float = 0.9,
+        target_fallback_seconds: float = 3.0,
+        search_corroboration_seconds: float = 2.0,
     ) -> None:
         self.buffer_seconds = buffer_seconds
         self.session_timeout = session_timeout
         self.retroactive_threshold = retroactive_threshold
+        self.target_fallback_seconds = target_fallback_seconds
+        self.search_corroboration_seconds = search_corroboration_seconds
 
         self.pending: list[LootEvent] = []
         self.sightings: deque[TargetSighting] = deque()
+        self.sources: deque[SourceEvent] = deque()
         self.drops: list[LootDrop] = []
 
         self.current_encounter_uuid: str = str(uuid.uuid4())
@@ -127,6 +145,9 @@ class Correlator:
         just_extracted = is_same_encounter and self.last_extract and not event.can_extract
 
         self._flush(event.time_ms, just_skinned, just_butchered, just_extracted)
+
+        self.sources.append(event)
+        self._prune_sources()
 
         if not is_same_encounter:
             self.current_encounter_uuid = str(uuid.uuid4())
@@ -178,6 +199,9 @@ class Correlator:
                     status="Linked",
                     lag_ms=0,
                     zone=self.current_zone,
+                    linked_via="monster" if self.current_monster is not None else "orphan",
+                    monster_name=self.current_monster,
+                    monster_lag_ms=0,
                 )
             )
         self.pending.clear()
@@ -193,13 +217,32 @@ class Correlator:
         while self.sightings and self.sightings[0].time_ms < cutoff:
             self.sightings.popleft()
 
+    def _prune_sources(self) -> None:
+        if not self.pending:
+            return
+        oldest_drop = min(drop.time_ms for drop in self.pending)
+        window_ms = int(max(self.buffer_seconds, self.search_corroboration_seconds) * 1000)
+        cutoff = oldest_drop - window_ms
+        while self.sources and self.sources[0].time_ms < cutoff:
+            self.sources.popleft()
+
+    def _corroborated_by_search(self, drop_time_ms: int, name: str) -> bool:
+        """Whether a same-name corpse-search packet precedes the drop within the window."""
+        window_ms = int(self.search_corroboration_seconds * 1000)
+        for source in self.sources:
+            lag = drop_time_ms - source.time_ms
+            if 0 <= lag <= window_ms and source.monster == name:
+                return True
+        return False
+
     def _orphan_source(self, drop_time_ms: int) -> tuple[str, float]:
-        """Best matching target sighting within the buffer, else Ground/Unknown."""
+        """Best matching target sighting within the fallback window, else Ground/Unknown."""
         best_name = GROUND
         best_lag = _INF
+        window = min(self.buffer_seconds, self.target_fallback_seconds)
         for sighting in self.sightings:
             lag = (drop_time_ms - sighting.time_ms) / 1000.0
-            if 0.0 <= lag <= self.buffer_seconds and lag < best_lag:
+            if 0.0 <= lag <= window and lag < best_lag:
                 best_name = sighting.name
                 best_lag = lag
         return best_name, best_lag
@@ -207,18 +250,26 @@ class Correlator:
     def _orphan_drop(self, drop: LootEvent) -> LootDrop:
         """Build a lone/orphaned drop using the nearest target sighting."""
         orphan_name, orphan_lag = self._orphan_source(drop.time_ms)
-        status = "Linked" if orphan_name != GROUND else "Orphaned"
+        linked = orphan_name != GROUND
+        corroborated = linked and self._corroborated_by_search(drop.time_ms, orphan_name)
+        status = "Linked" if linked else "Orphaned"
         lag_ms = round(orphan_lag * 1000) if orphan_lag != _INF else 0
         return LootDrop(
             time_ms=drop.time_ms,
             source=orphan_name,
             encounter_uuid=str(uuid.uuid4()),
-            activity="Looting",
+            activity="Looting" if corroborated else "Harvesting",
             item=drop.item,
             amount=drop.amount,
             status=status,
             lag_ms=lag_ms,
             zone=self.current_zone,
+            linked_via="target" if linked else "orphan",
+            monster_name=self.current_monster,
+            monster_lag_ms=None,
+            target_name=None if orphan_name == GROUND else orphan_name,
+            target_lag_ms=None if orphan_lag == _INF else round(orphan_lag * 1000),
+            corroborated_by_search=corroborated,
         )
 
     def _flush(
@@ -228,6 +279,7 @@ class Correlator:
         just_butchered: bool = False,
         just_extracted: bool = False,
     ) -> None:
+        self._prune_sources()
         for drop in self.pending:
             if self.current_monster is not None and ref_time_ms is not None:
                 monster_lag = (ref_time_ms - drop.time_ms) / 1000.0
@@ -254,6 +306,11 @@ class Correlator:
                         status="Linked",
                         lag_ms=round(monster_lag * 1000),
                         zone=self.current_zone,
+                        linked_via="monster",
+                        monster_name=self.current_monster,
+                        monster_lag_ms=round(monster_lag * 1000),
+                        target_name=None if orphan_name == GROUND else orphan_name,
+                        target_lag_ms=None if orphan_lag == _INF else round(orphan_lag * 1000),
                     )
                 )
             else:

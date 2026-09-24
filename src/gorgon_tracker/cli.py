@@ -202,6 +202,61 @@ def calibrate(
 
 
 @app.command()
+def sniff_inspect(
+    ctx: typer.Context,
+    outdir: Path = typer.Option(  # noqa: B008 - required by typer
+        Path("sniff-output"), "--outdir", "-o", help="Directory for the raw capture and report artifacts."
+    ),
+    duration: float | None = typer.Option(  # noqa: B008 - required by typer
+        None, help="Capture for N seconds (default: until Enter/Ctrl-C)."
+    ),
+    pcap: Path | None = typer.Option(  # noqa: B008 - required by typer
+        None, help="Analyze an existing capture file instead of capturing live."
+    ),
+    bpf: str | None = typer.Option(None, help="Override the capture/display filter."),
+) -> None:
+    """Capture game traffic and inventory plaintext strings (packet investigation)."""
+    import threading
+
+    from . import ports as ports_mod
+    from . import sniff_inspect as sniff_mod
+
+    stop_event = threading.Event()
+
+    game_tcp_ports: set[int] | None = None
+    if pcap is None:
+        game_tcp_ports, _ = ports_mod.discover_ports()
+
+    if duration is None:
+        console.print("[yellow]Capturing game traffic. Perform the scripted actions (kill, loot-all, skin, ")
+        console.print("butcher, bury, harvest), then press Enter or Ctrl-C to stop.[/yellow]")
+
+        from contextlib import suppress
+
+        def _wait_for_stop() -> None:
+            with suppress(EOFError):
+                input()
+            stop_event.set()
+
+        threading.Thread(target=_wait_for_stop, daemon=True).start()
+
+    if pcap is not None:
+        summary = sniff_mod.analyze_pcap(ctx.obj, pcap.expanduser(), outdir, bpf, game_tcp_ports)
+    else:
+        summary = sniff_mod.capture_live(
+            ctx.obj, outdir, stop_event, bpf, duration_s=duration, game_tcp_ports=game_tcp_ports
+        )
+
+    console.print(f"[green]Captured {summary['frames']} frames, {summary['unique_tokens']} unique strings[/green]")
+    console.print(f"  raw/source: {summary['source_file']}")
+    console.print(f"  strings:    {summary['strings_file']}")
+    console.print(f"  streams:    {summary['streams_dir']}")
+    console.print("[bold]Top strings:[/bold]")
+    for entry in summary["top_strings"]:
+        console.print(f"  {entry['count']:>5}  {entry['token']!r}")
+
+
+@app.command()
 def replay(
     ctx: typer.Context,
     captures: list[Path] = typer.Argument(  # noqa: B008 - required by typer
@@ -284,6 +339,9 @@ def update_names(
 def export(
     ctx: typer.Context,
     since: str | None = typer.Option(None, help="Only export loot_drops at or after this ISO time."),
+    with_evidence: bool = typer.Option(
+        False, "--with-evidence", help="Append attribution audit columns (linked_via, lag evidence)."
+    ),
     out: Path = typer.Option(  # noqa: B008 - required by typer
         "loot.csv", "--out", "-o", help="Destination CSV file."
     ),
@@ -298,7 +356,7 @@ def export(
     try:
         since_ms = iso_to_ms(since) if since else None
         with out.open("w", newline="", encoding="utf-8") as fh:
-            count = export_mod.export_loot_csv(conn, fh, since_ms)
+            count = export_mod.export_loot_csv(conn, fh, since_ms, with_evidence=with_evidence)
     finally:
         conn.close()
     console.print(f"[green]Exported {count} loot rows to {out}[/green]")

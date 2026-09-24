@@ -59,6 +59,13 @@ class CorrelateConfig(BaseModel):
     buffer_seconds: float = 10.0
     session_timeout: float = 3.0
     retroactive_threshold: float = 0.9
+    # How stale a target sighting may be to compete with (or substitute for) a
+    # monster source. Looting/harvesting targets the entity being looted, so a
+    # fresh sighting is strong evidence; old sightings are coincidence risk.
+    target_fallback_seconds: float = 3.0
+    # A target-linked drop within this many seconds of a same-name corpse search
+    # is considered corpse loot rather than a harvestable.
+    search_corroboration_seconds: float = 2.0
 
 
 class NamesKindConfig(BaseModel):

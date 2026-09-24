@@ -3,6 +3,7 @@ import type {
   ConfigResponse,
   DaemonInfo,
   DropRateRow,
+  LootOverride,
   LootRow,
   MigrateResult,
   NamesInfo,
@@ -57,7 +58,18 @@ export const api = {
     request<SummaryRow[]>(`/summary${query(params)}`),
   dropRates: (params: { monster?: string; item?: string } = {}) =>
     request<DropRateRow[]>(`/drop-rates${query(params)}`),
-  loot: (limit = 300) => request<LootRow[]>(`/loot?limit_rows=${limit}`),
+  loot: (
+    limit = 300,
+    params: { linkedVia?: string; confidence?: string } = {},
+  ) => request<LootRow[]>(`/loot?limit_rows=${limit}${query(params)}`),
+  overrideLoot: (id: number, payload: LootOverride) =>
+    request<LootRow>(`/api/loot/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  revertLoot: (id: number) =>
+    request<{ ok: boolean }>(`/api/loot/${id}`, { method: "DELETE" }),
 
   chatTail: (limit = 500) => request<ChatTail>(`/api/chat/tail${query({ limit })}`),
 

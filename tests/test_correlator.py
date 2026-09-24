@@ -214,3 +214,88 @@ def test_flush_expired_keeps_recent_pending() -> None:
     stale = c.flush_expired(make(20.0))
     assert [d.item for d in stale] == ["Bone"]
     assert c.pending == [loot(19.5, "Pelt")]
+
+
+# --- evidence + harvestable classification -----------------------------------
+
+
+def test_monster_link_records_evidence() -> None:
+    c = Correlator()
+    drops = _run(c, [("source", src(1.0, "Rat")), ("loot", loot(3.0, "Bone")), ("source", src(4.0, "Rat"))])
+    drop = drops[0]
+    assert drop.linked_via == "monster"
+    assert drop.monster_name == "Rat"
+    assert drop.monster_lag_ms == 1000
+    assert drop.corroborated_by_search is False
+
+
+def test_target_link_is_harvesting_without_corpse_search() -> None:
+    c = Correlator()
+    drops = _run(
+        c,
+        [
+            ("target", TargetSighting(time_ms=make(3.8), name="Flower")),
+            ("loot", loot(4.0, "Golden Flower")),
+            ("bury", BuryEvent(time_ms=make(5.0))),
+        ],
+    )
+    assert len(drops) == 1
+    drop = drops[0]
+    assert drop.linked_via == "target"
+    assert drop.source == "Flower"
+    assert drop.activity == "Harvesting"
+    assert drop.corroborated_by_search is False
+    assert drop.target_lag_ms == 200
+
+
+def test_target_link_corroborated_by_search_stays_looting() -> None:
+    c = Correlator()
+    drops = _run(
+        c,
+        [
+            ("source", src(2.0, "Dire Wolf")),
+            ("target", TargetSighting(time_ms=make(3.8), name="Dire Wolf")),
+            ("loot", loot(4.0, "Wolf Pelt")),
+            ("bury", BuryEvent(time_ms=make(5.0))),
+        ],
+    )
+    assert len(drops) == 1
+    drop = drops[0]
+    assert drop.linked_via == "target"
+    assert drop.activity == "Looting"  # same-name corpse search within 2s
+    assert drop.corroborated_by_search is True
+
+
+def test_stale_target_sighting_is_ineligible() -> None:
+    c = Correlator(target_fallback_seconds=3.0)
+    drops = _run(
+        c,
+        [
+            ("target", TargetSighting(time_ms=make(1.0), name="Dire Wolf")),
+            ("loot", loot(6.0, "Bone")),
+            ("bury", BuryEvent(time_ms=make(7.0))),
+        ],
+    )
+    assert len(drops) == 1
+    drop = drops[0]
+    assert drop.linked_via == "orphan"
+    assert drop.status == "Orphaned"
+    assert drop.source == "Ground/Unknown"
+
+
+def test_fresh_target_beats_stale_orphan_only_if_within_window() -> None:
+    c = Correlator(target_fallback_seconds=3.0)
+    drops = _run(
+        c,
+        [
+            ("target", TargetSighting(time_ms=make(9.5), name="Flower")),
+            ("loot", loot(10.0, "Petal")),  # sighting 0.5s before: eligible
+            ("loot", loot(13.5, "Twig")),  # sighting 4s before: ineligible
+            ("bury", BuryEvent(time_ms=make(14.5))),
+        ],
+    )
+    by_item = {d.item: d for d in drops}
+    assert by_item["Petal"].linked_via == "target"
+    assert by_item["Petal"].source == "Flower"
+    assert by_item["Twig"].linked_via == "orphan"
+    assert by_item["Twig"].status == "Orphaned"

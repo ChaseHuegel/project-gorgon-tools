@@ -53,6 +53,27 @@ def test_endpoints_serve_read_only(tmp_path: Path) -> None:
     assert "id" in loot[0]
 
 
+def test_loot_endpoint_exposes_evidence_and_filters(tmp_path: Path) -> None:
+    db_path = _populated(tmp_path)
+    client = TestClient(serve.build_app(str(db_path)))
+
+    all_rows = client.get("/loot", params={"limit_rows": 100}).json()
+    assert len(all_rows) == 4
+    by_item = {r["item"]: r for r in all_rows}
+    for key in ("linked_via", "monster_name", "monster_lag_ms", "target_name", "target_lag_ms", "overridden"):
+        assert key in by_item["Bat Guano"]
+
+    # The Ground Twig is target-linked and corroborated by a same-name corpse search.
+    twig = by_item["Ground Twig"]
+    assert twig["linked_via"] == "target"
+    assert twig["corroborated_by_search"] is True
+    assert twig["activity"] == "Looting"
+
+    assert len(client.get("/loot", params={"linked_via": "monster"}).json()) == 3
+    assert len(client.get("/loot", params={"confidence": "high"}).json()) == 3
+    assert len(client.get("/loot", params={"confidence": "uncertain"}).json()) == 1
+
+
 @pytest.mark.anyio
 async def test_stream_loot_yields_new_rows(tmp_path: Path) -> None:
     from gorgon_tracker.serve import _DB

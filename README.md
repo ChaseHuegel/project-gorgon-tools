@@ -18,6 +18,8 @@ Design and phase tracking: [`MIGRATION_PLAN.md`](MIGRATION_PLAN.md).
   grouped into sessions you can start and stop freely.
 - Offline tools: `replay` historical `.pcapng`/JSON/chat/CSV bundles, `migrate` legacy
   PowerShell outputs, `export` a legacy-compatible CSV, and `serve` a read-only web API.
+- `sniff-inspect` captures game traffic (raw pcap retained) and inventories plaintext
+  strings, checking whether loot/status messages cross the wire for tighter correlation.
 - `find-ports` auto-detects the game's ephemeral network ports; `calibrate` tunes OCR regions.
 
 ## Requirements
@@ -51,6 +53,7 @@ gorgon-tracker config                 # show effective configuration
 gorgon-tracker find-ports             # print the BPF filter for the running game
 gorgon-tracker run                    # capture in the foreground; Ctrl-C to stop
 gorgon-tracker run --daemon           # background; stop with `gorgon-tracker stop`
+gorgon-tracker sniff-inspect          # capture game traffic and inventory plaintext strings
 gorgon-tracker status                 # sessions + per-source event counts
 gorgon-tracker serve                  # read-only API at http://127.0.0.1:8000
 gorgon-tracker web                    # full browser UI at http://127.0.0.1:8000

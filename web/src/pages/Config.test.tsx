@@ -15,7 +15,7 @@ const config: ConfigType = {
     zones: { region: [1, 2, 3, 4], interval_s: 5, heartbeat_s: 30 },
     targets: { region: [5, 6, 7, 8], interval_s: 0.5, heartbeat_s: null },
   },
-  correlate: { buffer_seconds: 10, session_timeout: 3, retroactive_threshold: 0.9 },
+  correlate: { buffer_seconds: 10, session_timeout: 3, retroactive_threshold: 0.9, target_fallback_seconds: 3, search_corroboration_seconds: 2 },
 };
 
 const response: ConfigResponse = { path: "/cfg/gorgon-tracker.toml", config };

@@ -235,6 +235,68 @@ def build_control_router(db_path: str, config_path: str | None = None) -> APIRou
             headers={"Content-Disposition": 'attachment; filename="gorgon-loot.csv"'},
         )
 
+    # --- loot overrides (manual corrections) ---------------------------------
+
+    @router.put("/loot/{loot_drop_id}")
+    def put_loot_override(loot_drop_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        if loot_drop_id <= 0:
+            raise HTTPException(status_code=422, detail="invalid loot drop id")
+        conn = db.connect(db_path)
+        db.migrate(conn)
+        try:
+            row = conn.execute(
+                "SELECT id FROM loot_drops WHERE id = ?", (loot_drop_id,)
+            ).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="loot drop not found")
+            source = payload.get("source")
+            status = payload.get("status")
+            activity = payload.get("activity")
+            note = payload.get("note")
+            if status is not None and status not in ("Linked", "Orphaned"):
+                raise HTTPException(status_code=422, detail="status must be 'Linked' or 'Orphaned'")
+            if activity is not None and not isinstance(activity, str):
+                raise HTTPException(status_code=422, detail="activity must be a string")
+            if source is not None:
+                source = str(source).strip()
+                if not source:
+                    raise HTTPException(status_code=422, detail="source must not be empty")
+            if note is not None and not isinstance(note, str):
+                raise HTTPException(status_code=422, detail="note must be a string")
+            db.upsert_loot_override(
+                conn,
+                loot_drop_id,
+                source=source,
+                status=status,
+                activity=activity,
+                note=note,
+            )
+            from .serve import _effective_loot_row
+
+            row = conn.execute(
+                "SELECT ld.id, ld.captured_at, ld.source, ld.activity, ld.item, ld.amount,"
+                " ld.zone, ld.status, ld.lag_ms, ld.linked_via, ld.monster_name,"
+                " ld.monster_lag_ms, ld.target_name, ld.target_lag_ms,"
+                " ld.corroborated_by_search, ov.source AS ov_source, ov.status AS ov_status,"
+                " ov.activity AS ov_activity, ov.note AS ov_note "
+                "FROM loot_drops ld LEFT JOIN loot_overrides ov ON ov.loot_drop_id = ld.id"
+                " WHERE ld.id = ?",
+                (loot_drop_id,),
+            ).fetchone()
+            return _effective_loot_row(dict(row))
+        finally:
+            conn.close()
+
+    @router.delete("/loot/{loot_drop_id}")
+    def delete_loot_override(loot_drop_id: int) -> dict[str, bool]:
+        conn = db.connect(db_path)
+        db.migrate(conn)
+        try:
+            db.delete_loot_override(conn, loot_drop_id)
+            return {"ok": True}
+        finally:
+            conn.close()
+
     # --- name lists ----------------------------------------------------------
 
     @router.get("/names")

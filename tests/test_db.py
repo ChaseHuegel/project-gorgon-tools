@@ -1,3 +1,4 @@
+import sqlite3
 from pathlib import Path
 
 from gorgon_tracker import db
@@ -12,6 +13,7 @@ EXPECTED_TABLES = {
     "zone_changes",
     "encounters",
     "loot_drops",
+    "loot_overrides",
     "schema_migrations",
 }
 
@@ -28,7 +30,7 @@ def test_connect_creates_latest_schema(tmp_path: Path) -> None:
     db.migrate(conn)
     tables = _table_names(conn)
     assert tables >= EXPECTED_TABLES
-    assert db.schema_version(conn) == 1
+    assert db.schema_version(conn) == 2
     conn.close()
 
 
@@ -37,8 +39,39 @@ def test_migrate_is_idempotent(tmp_path: Path) -> None:
     db.migrate(conn)
     db.migrate(conn)
     rows = conn.execute("SELECT COUNT(*) AS c FROM schema_migrations").fetchone()
-    assert rows["c"] == 1
-    assert db.schema_version(conn) == 1
+    assert rows["c"] == 2
+    assert db.schema_version(conn) == 2
+    conn.close()
+
+
+def test_migrate_upgrades_version_1_database(tmp_path: Path) -> None:
+    """A pre-evidence DB (v1) gains the new loot_drops columns and overrides table."""
+    conn = sqlite3.connect(tmp_path / "old.db")
+    conn.executescript(
+        """
+        CREATE TABLE loot_drops (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            encounter_id INTEGER,
+            captured_at INTEGER NOT NULL,
+            source TEXT NOT NULL,
+            item TEXT NOT NULL,
+            amount INTEGER NOT NULL DEFAULT 1,
+            activity TEXT NOT NULL DEFAULT 'Looting',
+            zone TEXT NOT NULL DEFAULT 'Unknown',
+            status TEXT NOT NULL DEFAULT 'Linked',
+            lag_ms INTEGER NOT NULL DEFAULT 0
+        );
+        """
+    )
+    conn.execute("PRAGMA user_version = 1")
+    conn.close()
+
+    conn = db.connect(tmp_path / "old.db")
+    db.migrate(conn)
+    assert db.schema_version(conn) == 2
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(loot_drops)")}
+    assert cols >= {"linked_via", "monster_name", "monster_lag_ms", "target_name", "target_lag_ms"}
     conn.close()
 
 
@@ -82,10 +115,59 @@ def test_insert_helpers_roundtrip(tmp_path: Path) -> None:
     sight_id = db.insert_target_sighting(conn, session_id, raw_id, 1000, "Rat")
     zone_id = db.insert_zone_change(conn, session_id, raw_id, 1000, "Ilmari")
     enc_id = db.insert_encounter(conn, session_id, "uuid-1", "Rat", 900, 1100)
-    drop_id = db.insert_loot_drop(conn, session_id, enc_id, 1000, "Rat", "Rat Jaw", 2, "Looting", "Ilmari", "Linked", 0)
+    drop_id = db.insert_loot_drop(
+        conn,
+        session_id,
+        enc_id,
+        1000,
+        "Rat",
+        "Rat Jaw",
+        2,
+        "Looting",
+        "Ilmari",
+        "Linked",
+        0,
+        linked_via="monster",
+        monster_name="Rat",
+        monster_lag_ms=42,
+        target_name="Dire Wolf",
+        target_lag_ms=7,
+        corroborated_by_search=True,
+    )
 
     assert source_id == loot_id == bury_id == sight_id == zone_id == drop_id == 1
     assert conn.execute("SELECT COUNT(*) AS c FROM loot_drops WHERE encounter_id = ?", (enc_id,)).fetchone()["c"] == 1
+    row = conn.execute("SELECT * FROM loot_drops WHERE id = ?", (drop_id,)).fetchone()
+    assert row["linked_via"] == "monster"
+    assert row["monster_lag_ms"] == 42
+    assert row["corroborated_by_search"] == 1
+    conn.close()
+
+
+def test_loot_override_upsert_delete(tmp_path: Path) -> None:
+    conn = db.connect(tmp_path / "g.db")
+    db.migrate(conn)
+    session_id = db.new_session(conn)
+    drop_id = db.insert_loot_drop(conn, session_id, None, 1000, "Rat", "Bone", 1, "Looting", "Ilmari", "Linked", 0)
+
+    override_id = db.upsert_loot_override(
+        conn, drop_id, source="Wolf", status="Linked", activity="Harvesting", note="manual"
+    )
+    assert override_id == 1
+    override = db.get_loot_override(conn, drop_id)
+    assert override["source"] == "Wolf"
+    assert override["activity"] == "Harvesting"
+    assert override["note"] == "manual"
+
+    # Upsert replaces (unique on loot_drop_id, single row).
+    db.upsert_loot_override(conn, drop_id, status="Orphaned")
+    overrides = conn.execute("SELECT * FROM loot_overrides").fetchall()
+    assert len(overrides) == 1
+    assert overrides[0]["status"] == "Orphaned"
+    assert overrides[0]["source"] == "Wolf"  # untouched fields persist
+
+    db.delete_loot_override(conn, drop_id)
+    assert db.get_loot_override(conn, drop_id) is None
     conn.close()
 
 

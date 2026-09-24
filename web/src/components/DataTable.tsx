@@ -1,3 +1,5 @@
+import { Fragment } from "react";
+
 interface Column<T> {
   key: string;
   header: string;
@@ -9,10 +11,12 @@ export function DataTable<T>({
   columns,
   rows,
   empty = "No rows.",
+  detail,
 }: {
   columns: Column<T>[];
   rows: T[];
   empty?: string;
+  detail?: (row: T) => React.ReactNode;
 }) {
   if (rows.length === 0) return <p style={{ color: "var(--muted)" }}>{empty}</p>;
   return (
@@ -43,20 +47,29 @@ export function DataTable<T>({
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr key={i} style={{ borderBottom: "1px solid var(--border)" }}>
-              {columns.map((c) => (
-                <td
-                  key={c.key}
-                  style={{
-                    textAlign: c.align ?? "left",
-                    padding: "0.4rem 0.75rem",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {c.render(row)}
-                </td>
-              ))}
-            </tr>
+            <Fragment key={i}>
+              <tr style={{ borderBottom: "1px solid var(--border)" }}>
+                {columns.map((c) => (
+                  <td
+                    key={c.key}
+                    style={{
+                      textAlign: c.align ?? "left",
+                      padding: "0.4rem 0.75rem",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {c.render(row)}
+                  </td>
+                ))}
+              </tr>
+              {detail?.(row) != null && (
+                <tr style={{ borderBottom: "1px solid var(--border)", background: "var(--panel)" }}>
+                  <td colSpan={columns.length} style={{ padding: "0.5rem 0.75rem" }}>
+                    {detail(row)}
+                  </td>
+                </tr>
+              )}
+            </Fragment>
           ))}
         </tbody>
       </table>

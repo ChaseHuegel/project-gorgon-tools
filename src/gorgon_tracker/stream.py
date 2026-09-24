@@ -16,7 +16,9 @@ from typing import Any
 from fastapi.concurrency import run_in_threadpool
 
 _LOOT_POLL_SQL = (
-    "SELECT id, captured_at, source, activity, item, amount, zone, status, lag_ms "
+    "SELECT id, captured_at, source, activity, item, amount, zone, status, lag_ms,"
+    " linked_via, monster_name, monster_lag_ms, target_name, target_lag_ms,"
+    " corroborated_by_search "
     "FROM loot_drops WHERE id > ? ORDER BY id ASC"
 )
 
@@ -69,7 +71,9 @@ async def loot_stream(
         rows = await run_in_threadpool(db.rows, _LOOT_POLL_SQL, (cursor,))
         for row in rows:
             cursor = row["id"]
-            yield _sse(cursor, _STREAM_EVENT, row)
+            data = dict(row)
+            data["corroborated_by_search"] = bool(data["corroborated_by_search"])
+            yield _sse(cursor, _STREAM_EVENT, data)
         if not await _polls_remaining(once, is_disconnected):
             break
         yield _heartbeat()

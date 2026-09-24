@@ -47,6 +47,8 @@ export interface Config {
     buffer_seconds: number;
     session_timeout: number;
     retroactive_threshold: number;
+    target_fallback_seconds: number;
+    search_corroboration_seconds: number;
   };
 }
 
@@ -91,6 +93,21 @@ export interface LootRow {
   zone: string;
   status: string;
   lag_ms: number;
+  linked_via: "monster" | "target" | "orphan" | string;
+  monster_name: string | null;
+  monster_lag_ms: number | null;
+  target_name: string | null;
+  target_lag_ms: number | null;
+  corroborated_by_search: boolean;
+  note: string | null;
+  overridden: boolean;
+}
+
+export interface LootOverride {
+  source?: string;
+  status?: string;
+  activity?: string;
+  note?: string;
 }
 
 export interface RawEventRow {

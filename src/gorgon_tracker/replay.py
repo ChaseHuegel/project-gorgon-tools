@@ -63,6 +63,8 @@ def run_replay(
         buffer_seconds=cfg.correlate.buffer_seconds,
         session_timeout=cfg.correlate.session_timeout,
         retroactive_threshold=cfg.correlate.retroactive_threshold,
+        target_fallback_seconds=cfg.correlate.target_fallback_seconds,
+        search_corroboration_seconds=cfg.correlate.search_corroboration_seconds,
     )
 
     windows: list[tuple[int, int]] = []

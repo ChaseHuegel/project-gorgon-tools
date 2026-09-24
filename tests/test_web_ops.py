@@ -122,6 +122,75 @@ def test_export_csv(tmp_path: Path) -> None:
     assert resp.text.startswith("Time,Source,ID,Activity,Item,Amount,Status,LagTime,Zone")
 
 
+# --- loot overrides ----------------------------------------------------------
+
+
+def _replay_and_drops(tmp_path: Path) -> tuple[TestClient, list[dict]]:
+    files = scenario.build(tmp_path)
+    client = _client(tmp_path)
+    resp = client.post(
+        "/api/replay",
+        data={
+            "paths": [
+                str(files.capture_json),
+                str(files.chat_log),
+                str(files.zones_csv),
+                str(files.targets_csv),
+            ]
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    drops = client.get("/loot", params={"limit_rows": 100}).json()
+    return client, drops
+
+
+def test_loot_override_roundtrip(tmp_path: Path) -> None:
+    client, drops = _replay_and_drops(tmp_path)
+    target = next(r for r in drops if r["item"] == "Ground Twig")
+    assert target["overridden"] is False
+
+    resp = client.put(
+        f"/api/loot/{target['id']}",
+        json={"source": "Chest", "status": "Linked", "activity": "Looting", "note": "looks like a chest"},
+    )
+    assert resp.status_code == 200, resp.text
+    updated = resp.json()
+    assert updated["source"] == "Chest"
+    assert updated["overridden"] is True
+    assert updated["note"] == "looks like a chest"
+    assert updated["linked_via"] == "target"  # evidence preserved
+
+    # Partial update keeps previously overridden fields.
+    partial = client.put(f"/api/loot/{target['id']}", json={"activity": "Harvesting"}).json()
+    assert partial["source"] == "Chest"
+    assert partial["activity"] == "Harvesting"
+
+    # The list endpoint reflects the override.
+    listing = {r["id"]: r for r in client.get("/loot", params={"limit_rows": 100}).json()}
+    assert listing[target["id"]]["source"] == "Chest"
+
+    # Revert restores the correlated values.
+    reverted = client.delete(f"/api/loot/{target['id']}")
+    assert reverted.status_code == 200
+    listing = {r["id"]: r for r in client.get("/loot", params={"limit_rows": 100}).json()}
+    assert listing[target["id"]]["overridden"] is False
+    assert listing[target["id"]]["source"] == "Dire Wolf"
+
+
+def test_loot_override_validates(tmp_path: Path) -> None:
+    client, drops = _replay_and_drops(tmp_path)
+    drop = drops[0]
+
+    missing = client.put("/api/loot/99999", json={"source": "Rat"})
+    assert missing.status_code == 404
+
+    bad_status = client.put(f"/api/loot/{drop['id']}", json={"status": "Maybe"})
+    assert bad_status.status_code == 422
+
+    empty_source = client.put(f"/api/loot/{drop['id']}", json={"source": "  "})
+    assert empty_source.status_code == 422
+
+
 # --- calibration -------------------------------------------------------------
 
 

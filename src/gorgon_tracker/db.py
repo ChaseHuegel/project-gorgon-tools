@@ -13,7 +13,27 @@ from .timeutil import utc_now_ms
 
 _SCHEMA_SQL = files("gorgon_tracker").joinpath("schema.sql").read_text(encoding="utf-8")
 
-MIGRATIONS: list[tuple[int, str]] = [(1, _SCHEMA_SQL)]
+# v2: audit evidence on loot_drops plus a reversible manual-override table.
+_MIGRATION_V2_SQL = """
+ALTER TABLE loot_drops ADD COLUMN linked_via TEXT NOT NULL DEFAULT 'monster';
+ALTER TABLE loot_drops ADD COLUMN monster_name TEXT;
+ALTER TABLE loot_drops ADD COLUMN monster_lag_ms INTEGER;
+ALTER TABLE loot_drops ADD COLUMN target_name TEXT;
+ALTER TABLE loot_drops ADD COLUMN target_lag_ms INTEGER;
+ALTER TABLE loot_drops ADD COLUMN corroborated_by_search INTEGER NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS loot_overrides (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    loot_drop_id INTEGER NOT NULL UNIQUE REFERENCES loot_drops(id),
+    source TEXT,
+    status TEXT,
+    activity TEXT,
+    note TEXT,
+    created_at INTEGER NOT NULL
+);
+"""
+
+MIGRATIONS: list[tuple[int, str]] = [(1, _SCHEMA_SQL), (2, _MIGRATION_V2_SQL)]
 
 COUNT_TABLES = (
     "raw_events",
@@ -249,6 +269,12 @@ def insert_loot_drop(
     zone: str,
     status: str,
     lag_ms: int,
+    linked_via: str = "monster",
+    monster_name: str | None = None,
+    monster_lag_ms: int | None = None,
+    target_name: str | None = None,
+    target_lag_ms: int | None = None,
+    corroborated_by_search: bool = False,
 ) -> int:
     return _insert(
         conn,
@@ -264,8 +290,53 @@ def insert_loot_drop(
             "zone": zone,
             "status": status,
             "lag_ms": int(lag_ms),
+            "linked_via": linked_via,
+            "monster_name": monster_name,
+            "monster_lag_ms": monster_lag_ms,
+            "target_name": target_name,
+            "target_lag_ms": target_lag_ms,
+            "corroborated_by_search": int(corroborated_by_search),
         },
     )
+
+
+def upsert_loot_override(
+    conn: sqlite3.Connection,
+    loot_drop_id: int,
+    source: str | None = None,
+    status: str | None = None,
+    activity: str | None = None,
+    note: str | None = None,
+) -> int:
+    """Insert or replace the manual override for one loot drop; returns its row id.
+
+    Partial updates are merged over any existing override so unset fields persist.
+    """
+    existing = get_loot_override(conn, loot_drop_id)
+    values = {
+        "loot_drop_id": loot_drop_id,
+        "source": source if source is not None else (existing or {}).get("source"),
+        "status": status if status is not None else (existing or {}).get("status"),
+        "activity": activity if activity is not None else (existing or {}).get("activity"),
+        "note": note if note is not None else (existing or {}).get("note"),
+        "created_at": utc_now_ms(),
+    }
+    with conn:
+        conn.execute("DELETE FROM loot_overrides WHERE loot_drop_id = ?", (loot_drop_id,))
+        return _insert(conn, "loot_overrides", values)
+
+
+def delete_loot_override(conn: sqlite3.Connection, loot_drop_id: int) -> None:
+    """Remove the manual override for one loot drop (revert to correlated values)."""
+    with conn:
+        conn.execute("DELETE FROM loot_overrides WHERE loot_drop_id = ?", (loot_drop_id,))
+
+
+def get_loot_override(conn: sqlite3.Connection, loot_drop_id: int) -> dict[str, Any] | None:
+    row = conn.execute(
+        "SELECT * FROM loot_overrides WHERE loot_drop_id = ?", (loot_drop_id,)
+    ).fetchone()
+    return dict(row) if row else None
 
 
 def status_overview(conn: sqlite3.Connection) -> dict[str, Any]:

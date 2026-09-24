@@ -35,5 +35,7 @@
 # buffer_seconds = 10.0
 # session_timeout = 3.0
 # retroactive_threshold = 0.9
+# target_fallback_seconds = 3.0   # max age of a target sighting that may attribute loot
+# search_corroboration_seconds = 2.0  # same-name corpse search window marking target loot as corpse loot
 [ocr.zones]
 region = [1680, 31, 180, 20]

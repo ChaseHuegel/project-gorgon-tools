@@ -15,6 +15,8 @@ def test_defaults(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert cfg.ocr.zones.region == [1680, 0, 180, 50]
     assert cfg.ocr.targets.interval_s == 0.5
     assert cfg.correlate.buffer_seconds == 10.0
+    assert cfg.correlate.target_fallback_seconds == 3.0
+    assert cfg.correlate.search_corroboration_seconds == 2.0
 
 
 def test_load_file_overrides(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

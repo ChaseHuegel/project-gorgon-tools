@@ -21,10 +21,43 @@ _QUERIES: dict[str, str] = {
     "summary": "SELECT * FROM v_summary ORDER BY zone, monster, item",
     "drop_rates": "SELECT * FROM v_drop_rates",
     "loot": (
-        "SELECT ld.id, ld.captured_at, ld.source, ld.activity, ld.item, ld.amount, ld.zone, ld.status, ld.lag_ms "
-        "FROM loot_drops ld ORDER BY ld.captured_at DESC LIMIT ?"
+        "SELECT ld.id, ld.captured_at, ld.source, ld.activity, ld.item, ld.amount, ld.zone,"
+        " ld.status, ld.lag_ms, ld.linked_via, ld.monster_name, ld.monster_lag_ms,"
+        " ld.target_name, ld.target_lag_ms, ld.corroborated_by_search,"
+        " ov.source AS ov_source, ov.status AS ov_status, ov.activity AS ov_activity,"
+        " ov.note AS ov_note "
+        "FROM loot_drops ld LEFT JOIN loot_overrides ov ON ov.loot_drop_id = ld.id"
+        " ORDER BY ld.captured_at DESC LIMIT ?"
     ),
 }
+
+_LOOT_EFFECTIVE_FIELDS = (
+    "id",
+    "captured_at",
+    "item",
+    "amount",
+    "zone",
+    "lag_ms",
+    "linked_via",
+    "monster_name",
+    "monster_lag_ms",
+    "target_name",
+    "target_lag_ms",
+    "corroborated_by_search",
+)
+
+
+def _effective_loot_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Merge a manual override over the correlated values of one loot row."""
+    cleaned = {k: row.get(k) for k in _LOOT_EFFECTIVE_FIELDS}
+    cleaned["corroborated_by_search"] = bool(cleaned["corroborated_by_search"])
+    overridden = any(row.get(f"ov_{field}") is not None for field in ("source", "status", "activity"))
+    cleaned["source"] = row.get("ov_source") or row.get("source")
+    cleaned["status"] = row.get("ov_status") or row.get("status")
+    cleaned["activity"] = row.get("ov_activity") or row.get("activity")
+    cleaned["note"] = row.get("ov_note")
+    cleaned["overridden"] = overridden
+    return cleaned
 
 
 class _DB:
@@ -37,6 +70,7 @@ class _DB:
         Path(self.db_path).expanduser().parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
+        db_mod.migrate(conn)  # ensure the schema (incl. evidence columns) is current
         return conn
 
     def rows(self, query: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
@@ -85,8 +119,21 @@ def build_read_router(db_path: str, include_index: bool = True) -> tuple[APIRout
         return db.rows(query, tuple(params))
 
     @router.get("/loot")
-    def loot(limit_rows: int = 200) -> list[dict[str, Any]]:
-        return db.rows(_QUERIES["loot"], (max(1, min(limit_rows, 5000)),))
+    def loot(
+        limit_rows: int = 200,
+        linked_via: str | None = None,
+        confidence: str | None = None,
+    ) -> list[dict[str, Any]]:
+        query = _QUERIES["loot"]
+        params: list[Any] = [max(1, min(limit_rows, 5000))]
+        if linked_via:
+            query = query.replace(" ORDER BY", " WHERE ld.linked_via = ? ORDER BY", 1)
+            params.insert(0, linked_via)
+        elif confidence == "uncertain":
+            query = query.replace(" ORDER BY", " WHERE ld.linked_via != 'monster' ORDER BY", 1)
+        elif confidence == "high":
+            query = query.replace(" ORDER BY", " WHERE ld.linked_via = 'monster' ORDER BY", 1)
+        return [_effective_loot_row(r) for r in db.rows(query, tuple(params))]
 
     # --- live SSE streams ---------------------------------------------------
 
