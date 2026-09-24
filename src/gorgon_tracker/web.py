@@ -37,6 +37,19 @@ def _save_uploads(files: list[UploadFile], target_dir: Path) -> list[Path]:
     return saved
 
 
+def _chat_line_kind(text: str) -> str | None:
+    """Classify a raw chat line for the UI: 'loot', 'bury', or None (other chat)."""
+    from .correlator import BuryEvent, LootEvent
+    from .parsers import chat as chat_parser
+
+    event = chat_parser.parse_chat_line(text)
+    if isinstance(event, LootEvent):
+        return "loot"
+    if isinstance(event, BuryEvent):
+        return "bury"
+    return None
+
+
 def build_control_router(db_path: str, config_path: str | None = None) -> APIRouter:
     """Control endpoints for configuring, running/stopping the capture daemon."""
     from . import export as export_mod
@@ -70,6 +83,48 @@ def build_control_router(db_path: str, config_path: str | None = None) -> APIRou
             "daemon": control.daemon_status(db_path),
             "warnings": control.setup_warnings(cfg),
         }
+
+    # --- chat log tail ------------------------------------------------------
+
+    @router.get("/chat/tail")
+    def chat_tail(limit: int = 500) -> dict[str, Any]:
+        from .config import default_chat_log_dir
+        from .sources import chat_tail as chat_tail_mod
+
+        cfg = _cfg()
+        raw_dir = cfg.chat.log_dir.strip() or default_chat_log_dir()
+        result: dict[str, Any] = {
+            "found": False,
+            "log_dir": str(Path(raw_dir)) if raw_dir else None,
+            "file": None,
+            "mtime_ms": None,
+            "start_offset": 0,
+            "reason": "",
+            "lines": [],
+        }
+        if not raw_dir:
+            result["reason"] = "chat log directory not configured"
+            return result
+        log_dir_path = Path(raw_dir)
+        if not log_dir_path.is_dir():
+            result["reason"] = "chat log directory not found"
+            return result
+        try:
+            log = chat_tail_mod.newest_log(log_dir_path)
+            if log is None:
+                result["reason"] = "no chat logs in directory"
+                return result
+            stat = log.stat()
+            start_offset, chat_lines = chat_tail_mod.read_tail(log, max(1, min(limit, 5000)))
+        except OSError:
+            result["reason"] = "chat log unreadable"
+            return result
+        result["found"] = True
+        result["file"] = log.name
+        result["mtime_ms"] = stat.st_mtime_ns // 1_000_000
+        result["start_offset"] = start_offset
+        result["lines"] = [{"text": text, "kind": _chat_line_kind(text)} for text in chat_lines]
+        return result
 
     # --- config -------------------------------------------------------------
 

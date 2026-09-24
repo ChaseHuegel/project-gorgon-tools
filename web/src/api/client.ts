@@ -1,4 +1,5 @@
 import type {
+  ChatTail,
   ConfigResponse,
   DaemonInfo,
   DropRateRow,
@@ -52,6 +53,8 @@ export const api = {
   dropRates: (params: { monster?: string; item?: string } = {}) =>
     request<DropRateRow[]>(`/drop-rates${query(params)}`),
   loot: (limit = 300) => request<LootRow[]>(`/loot?limit_rows=${limit}`),
+
+  chatTail: (limit = 500) => request<ChatTail>(`/api/chat/tail${query({ limit })}`),
 
   daemonStart: () => request<DaemonInfo>("/api/daemon/start", { method: "POST" }),
   daemonStop: () => request<DaemonInfo>("/api/daemon/stop", { method: "POST" }),

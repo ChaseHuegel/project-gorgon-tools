@@ -1,14 +1,25 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
-import type { Status } from "../api/types";
+import type { ChatLine, Status } from "../api/types";
 import { Page } from "../components/Page";
 import { StatusBadge } from "../components/StatusBadge";
-import { useStatus } from "../hooks/useApi";
+import { useApiData, useStatus } from "../hooks/useApi";
 
 export default function StatusPage() {
   const { data, loading, error, reload } = useStatus();
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  const chatState = useApiData(() => api.chatTail(500), [], 1500);
+  const chat = chatState.data;
+  const [follow, setFollow] = useState(true);
+  const chatBoxRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (follow && chatBoxRef.current) {
+      chatBoxRef.current.scrollTop = chatBoxRef.current.scrollHeight;
+    }
+  }, [chat, follow]);
 
   const status = data as Status | null;
 
@@ -83,6 +94,40 @@ export default function StatusPage() {
       ) : (
         <p style={{ color: "var(--muted)" }}>No session currently open.</p>
       )}
+
+      <h2 style={{ fontSize: "1rem", margin: "1.25rem 0 0.5rem" }}>
+        Tailed chat log
+        {chat?.found && chat.file && (
+          <span style={{ color: "var(--muted)", fontWeight: 400, marginLeft: "0.5rem" }}>{chat.file}</span>
+        )}
+      </h2>
+      {chat?.found ? (
+        <>
+          <div style={{ display: "flex", gap: "0.6rem", alignItems: "center", marginBottom: "0.5rem" }}>
+            <label style={{ color: "var(--muted)", fontSize: "0.85rem", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={follow}
+                onChange={(e) => setFollow(e.target.checked)}
+                style={{ marginRight: "0.3rem", verticalAlign: "middle" }}
+              />
+              Follow
+            </label>
+            <span style={{ color: "var(--muted)", fontSize: "0.8rem" }}>{chat.lines.length} line(s)</span>
+          </div>
+          <div ref={chatBoxRef} style={chatBoxStyle}>
+            {chat.lines.map((line, i) => (
+              <div key={i} style={{ color: kindColor(line) }}>
+                {line.text}
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <p style={{ color: "var(--muted)" }}>
+          {chat ? `${chat.reason} — ${chat.log_dir ?? "no chat log directory"}` : "Loading chat log…"}
+        </p>
+      )}
     </Page>
   );
 }
@@ -102,6 +147,26 @@ function InfoCard({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
+function kindColor(line: ChatLine): string | undefined {
+  if (line.kind === "loot") return "var(--green)";
+  if (line.kind === "bury") return "var(--amber)";
+  return undefined;
+}
+
+const chatBoxStyle: React.CSSProperties = {
+  background: "var(--panel)",
+  border: "1px solid var(--border)",
+  borderRadius: 8,
+  padding: "0.75rem 1rem",
+  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+  fontSize: "0.8rem",
+  lineHeight: 1.45,
+  maxHeight: "24rem",
+  overflowY: "auto",
+  whiteSpace: "pre-wrap",
+  wordBreak: "break-word",
+};
 
 const grid: React.CSSProperties = {
   display: "grid",

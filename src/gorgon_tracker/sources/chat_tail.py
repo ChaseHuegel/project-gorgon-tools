@@ -12,6 +12,8 @@ from ..parsers.chat import ChatEvent
 
 _CHAT_SUFFIXES = ("*.log", "*.txt")
 
+_READ_CHUNK = 8192
+
 
 def newest_log(log_dir: Path) -> Path | None:
     """Return the most recently modified chat log in the directory, or None."""
@@ -22,6 +24,30 @@ def newest_log(log_dir: Path) -> Path | None:
     if not candidates:
         return None
     return max(candidates, key=lambda p: p.stat().st_mtime)
+
+
+def read_tail(path: Path, max_lines: int = 500) -> tuple[int, list[str]]:
+    """Return ``(start_offset, lines)`` for the last ``max_lines`` lines of ``path``.
+
+    Reads backward from EOF so a large log stays cheap to poll. ``start_offset``
+    is the byte offset where the returned block begins; ``lines`` are the raw
+    lines oldest-first, decoded with ``errors="replace"``.
+    """
+    buffer = b""
+    with path.open("rb") as fh:
+        size = path.stat().st_size
+        position = size
+        while position > 0:
+            step = min(_READ_CHUNK, position)
+            position -= step
+            fh.seek(position)
+            buffer = fh.read(step) + buffer
+            if buffer.count(b"\n") >= max_lines:
+                break
+    lines = buffer.decode("utf-8", errors="replace").splitlines()
+    if len(lines) > max_lines:
+        lines = lines[-max_lines:]
+    return size - len(buffer), lines
 
 
 def _read_append(path: Path, offset: int) -> tuple[str, int]:

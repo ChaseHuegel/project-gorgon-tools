@@ -7,6 +7,8 @@ import gorgon_tracker  # noqa: F401
 from gorgon_tracker.config_write import write_updates
 from gorgon_tracker.web import build_web_app
 
+from . import scenario
+
 
 def _config_file(tmp_path: Path) -> Path:
     path = tmp_path / "gorgon-tracker.toml"
@@ -110,3 +112,81 @@ def test_spa_served_with_fallback_and_api_404(tmp_path: Path) -> None:
 
     api = client.get("/api/nope")
     assert api.status_code == 404
+
+
+def _chat_config(tmp_path: Path, log_dir: str) -> Path:
+    path = tmp_path / "gorgon-tracker.toml"
+    path.write_text(f"[db]\npath = 'data/gorgon.db'\n[chat]\nlog_dir = '{log_dir}'\n")
+    return path
+
+
+def _match_line(seconds: float, item: str | None) -> str:
+    if item is None:
+        return f"{scenario.local_wall(seconds)} [Status] You bury the corpse."
+    return f"{scenario.local_wall(seconds)} [Status] {item} added to inventory."
+
+
+def _chat_client(tmp_path: Path, log_dir: str) -> TestClient:
+    return TestClient(build_web_app(str(tmp_path / "data/gorgon.db"), str(_chat_config(tmp_path, log_dir))))
+
+
+def test_chat_tail_happy_path(tmp_path: Path) -> None:
+    chats = tmp_path / "chats"
+    chats.mkdir()
+    (chats / "session.log").write_text(
+        "\n".join([_match_line(1.0, "Bat Guano"), "player says hello", _match_line(2.0, None)]) + "\n"
+    )
+
+    resp = _chat_client(tmp_path, str(chats)).get("/api/chat/tail")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["found"] is True
+    assert body["file"] == "session.log"
+    assert body["log_dir"] == str(chats)
+    assert [line["kind"] for line in body["lines"]] == ["loot", None, "bury"]
+    assert body["lines"][0]["text"].endswith("Bat Guano added to inventory.")
+
+
+def test_chat_tail_limit_returns_last_lines_oldest_first(tmp_path: Path) -> None:
+    chats = tmp_path / "chats"
+    chats.mkdir()
+    (chats / "session.log").write_text(
+        "\n".join(_match_line(float(i), str(i)) for i in range(1, 11)) + "\n"
+    )
+
+    body = _chat_client(tmp_path, str(chats)).get("/api/chat/tail?limit=3").json()
+    assert body["found"] is True
+    assert [line["text"].split("] ", 1)[1] for line in body["lines"]] == [
+        "8 added to inventory.",
+        "9 added to inventory.",
+        "10 added to inventory.",
+    ]
+
+
+def test_chat_tail_missing_log_dir(tmp_path: Path) -> None:
+    body = _chat_client(tmp_path, str(tmp_path / "nope")).get("/api/chat/tail").json()
+    assert body["found"] is False
+    assert body["reason"] == "chat log directory not found"
+    assert body["log_dir"] == str(tmp_path / "nope")
+
+
+def test_chat_tail_no_logs_in_dir(tmp_path: Path) -> None:
+    chats = tmp_path / "chats"
+    chats.mkdir()
+    body = _chat_client(tmp_path, str(chats)).get("/api/chat/tail").json()
+    assert body["found"] is False
+    assert body["reason"] == "no chat logs in directory"
+
+
+def test_chat_tail_unreadable_log(tmp_path: Path, monkeypatch) -> None:
+    def boom(*args, **kwargs):
+        raise OSError("permission denied")
+
+    monkeypatch.setattr("gorgon_tracker.sources.chat_tail.newest_log", boom)
+    chats = tmp_path / "chats"
+    chats.mkdir()
+    (chats / "session.log").write_text(_match_line(1.0, "Bone") + "\n")
+
+    body = _chat_client(tmp_path, str(chats)).get("/api/chat/tail").json()
+    assert body["found"] is False
+    assert body["reason"] == "chat log unreadable"

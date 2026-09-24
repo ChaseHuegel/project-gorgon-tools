@@ -32,4 +32,40 @@ describe("StatusPage", () => {
     btn.click();
     await waitFor(() => expect(spyStop).toHaveBeenCalled());
   });
+
+  it("renders the tailed chat log and follow toggle", async () => {
+    vi.spyOn(api, "status").mockResolvedValue(fake);
+    vi.spyOn(api, "chatTail").mockResolvedValue({
+      found: true,
+      log_dir: "/tmp/x/chats",
+      file: "session.log",
+      mtime_ms: 123,
+      start_offset: 0,
+      reason: "",
+      lines: [
+        { text: "player says hello", kind: null },
+        { text: "26-01-11 20:00:01 [Status] Bat Guano added to inventory.", kind: "loot" },
+      ],
+    });
+    render(<Status />);
+    expect(await screen.findByText("Tailed chat log")).toBeInTheDocument();
+    expect(await screen.findByText("player says hello")).toBeInTheDocument();
+    expect(screen.getByText(/Bat Guano/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Follow")).toBeInTheDocument();
+  });
+
+  it("shows a hint when the chat log is unavailable", async () => {
+    vi.spyOn(api, "status").mockResolvedValue(fake);
+    vi.spyOn(api, "chatTail").mockResolvedValue({
+      found: false,
+      log_dir: "/tmp/x/chats",
+      file: null,
+      mtime_ms: null,
+      start_offset: 0,
+      reason: "chat log directory not found",
+      lines: [],
+    });
+    render(<Status />);
+    expect(await screen.findByText(/chat log directory not found/)).toBeInTheDocument();
+  });
 });

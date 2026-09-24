@@ -112,3 +112,18 @@ export interface ReplayResult {
 export interface MigrateResult {
   imported: Array<{ file: string; session_id: number; kind: string; imported: number }>;
 }
+
+export interface ChatLine {
+  text: string;
+  kind: "loot" | "bury" | null;
+}
+
+export interface ChatTail {
+  found: boolean;
+  log_dir: string | null;
+  file: string | null;
+  mtime_ms: number | null;
+  start_offset: number;
+  reason: string;
+  lines: ChatLine[];
+}

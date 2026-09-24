@@ -61,7 +61,8 @@ gorgon-tracker web                    # full browser UI at http://127.0.0.1:8000
 `gorgon-tracker web` opens a browser UI that configures the tool, starts/stops the
 capture daemon, and lets you browse loot data — no terminal needed for everyday use:
 
-- **Status** — start/stop the daemon, live per-source event counts, setup warnings.
+- **Status** — start/stop the daemon, live per-source event counts, setup warnings, and a
+  live **tailed chat log** panel (raw game chat, with loot/bury lines highlighted).
 - **Dashboard** — drop-rate charts and summary tables (via Recharts).
 - **Loot** — filter a stream of correlated drops; export to the legacy CSV.
 - **Sessions** — browse capture sessions and their timing.

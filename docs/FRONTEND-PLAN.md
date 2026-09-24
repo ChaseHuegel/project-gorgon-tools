@@ -231,5 +231,6 @@ Agents working on this project must update this section. Mark items `[x]` only w
 ### Known open items / follow-ups
 - [x] Decide whether the daemon runs via `run --daemon` subprocess (chosen) vs the web process hosting the pipeline in-process.
 - [x] Live update transport: polling via `GET /api/status` (chosen); SSE/WebSocket left as a follow-up if sub-second freshness is needed.
+- [x] Status page: live **tailed chat log** panel — `GET /api/chat/tail` reads the newest chat log in `chat.log_dir` (same file the daemon tails), returns the last N raw lines with per-line `loot`/`bury` classification, and degrades gracefully (`found: false` + reason) when the dir/path is unresolvable. Frontend polls every 1.5s with a follow/auto-scroll toggle.
 - [ ] Optional auth/remote option if `--host 0.0.0.0` is used (reverse proxy or token).
 - [ ] Code-split the recharts-heavy Dashboard bundle (Current: single ~150 kB chunk; consider `React.lazy`).
