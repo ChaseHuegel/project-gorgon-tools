@@ -117,4 +117,32 @@ describe("DashboardPage", () => {
     expect(screen.queryByText(/Source: Giant Bat/)).not.toBeInTheDocument();
     expect(screen.getByText("Drop-rate dashboard")).toBeInTheDocument();
   });
+
+  it("drills from one detail into another without blanking the page", async () => {
+    vi.spyOn(api, "search").mockResolvedValue({
+      sources: [{ name: "Giant Bat", drops: 2, encounters: 3 }],
+      items: [],
+      activities: [],
+    });
+    vi.spyOn(api, "sourceDetail").mockResolvedValue({
+      source: "Giant Bat",
+      zones: [{ zone: "Old Graveyard", drops: 4 }],
+      items: rates,
+    });
+    vi.spyOn(api, "itemDetail").mockResolvedValue({
+      item: "Bat Guano",
+      sources: rates,
+      zones: [{ zone: "Old Graveyard", drops: 4 }],
+    });
+    renderPage();
+    fireEvent.click(screen.getByText("Find drops"));
+    const input = await screen.findByRole("combobox", { name: "Search" });
+    fireEvent.change(input, { target: { value: "Giant" } });
+    fireEvent.click(await screen.findByRole("button", { name: /Giant Bat/ }));
+    expect(await screen.findByText(/Source: Giant Bat/)).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: /Bat Guano/ }));
+    expect(await screen.findByText(/Item \/ drop: Bat Guano/)).toBeInTheDocument();
+    expect(api.itemDetail).toHaveBeenCalledWith("Bat Guano", undefined);
+    expect(screen.getByText("Drop-rate dashboard")).toBeInTheDocument();
+  });
 });

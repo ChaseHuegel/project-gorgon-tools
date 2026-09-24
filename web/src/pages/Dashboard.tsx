@@ -161,14 +161,6 @@ export default function DashboardPage() {
     [rateFilters, matrixDeps],
   );
 
-  const detailData = useApiData<DetailData>(() => {
-    if (!detail) return Promise.resolve(null);
-    if (detail.kind === "source") return api.sourceDetail(detail.name, sinceMs);
-    if (detail.kind === "item") return api.itemDetail(detail.name, sinceMs);
-    if (detail.kind === "activity") return api.activityDetail(detail.name, sinceMs);
-    return api.zoneDetail(detail.name, sinceMs);
-  }, [detail?.kind, detail?.name, sinceMs]);
-
   const hasFilters = Boolean(source || item || zone || activity || sinceMs);
 
   return (
@@ -207,16 +199,16 @@ export default function DashboardPage() {
         hasFilters={hasFilters}
       />
 
-      {detail && detailData.data ? (
-        <DrillDown
+      {detail && (
+        <DetailDrilldown
+          key={`${detail.kind}\u0000${detail.name}`}
           kind={detail.kind}
           name={detail.name}
-          data={detailData.data}
-          loading={detailData.loading}
+          sinceMs={sinceMs}
           onClose={() => setDetail(null)}
           onOpen={openDetail}
         />
-      ) : null}
+      )}
 
       {tab === "overview" && (
         <Overview
@@ -932,6 +924,38 @@ function LinkCell({
   );
 }
 
+function DetailDrilldown({
+  kind,
+  name,
+  sinceMs,
+  onClose,
+  onOpen,
+}: {
+  kind: DetailKind;
+  name: string;
+  sinceMs?: number;
+  onClose: () => void;
+  onOpen: (kind: DetailKind, name: string) => void;
+}) {
+  const detailData = useApiData<DetailData>(() => {
+    if (kind === "source") return api.sourceDetail(name, sinceMs);
+    if (kind === "item") return api.itemDetail(name, sinceMs);
+    if (kind === "activity") return api.activityDetail(name, sinceMs);
+    return api.zoneDetail(name, sinceMs);
+  }, [kind, name, sinceMs]);
+
+  return (
+    <DrillDown
+      kind={kind}
+      name={name}
+      data={detailData.data}
+      loading={detailData.loading}
+      onClose={onClose}
+      onOpen={onOpen}
+    />
+  );
+}
+
 function DrillDown({
   kind,
   name,
@@ -955,7 +979,7 @@ function DrillDown({
           Close
         </button>
       </div>
-      {loading && <p style={{ color: "var(--muted)" }}>Loading…</p>}
+      {(loading || !data) && <p style={{ color: "var(--muted)" }}>Loading…</p>}
       {data && <DetailTables kind={kind} data={data} onOpen={onOpen} />}
     </div>
   );
