@@ -215,11 +215,12 @@ Agents working on this project must update this section. Mark items `[x]` only w
 - [x] Exit criteria: pages render live/test data; polling updates counters; charts reflect `/drop-rates` (`[fe]`)
 
 ### Phase 5 — Config, Calibrate, Import/Export, Sessions pages
-- [ ] `Config.tsx` — sectioned forms → `GET/PUT /api/config` (`[fe]`)
-- [ ] `Calibrate.tsx` — screenshot canvas, drag region, live OCR preview, save region (`[fe]`)
-- [ ] `ImportExport.tsx` — upload + path inputs for replay/migrate; find-ports; export CSV (`[fe]`)
-- [ ] `Sessions.tsx` — list sessions / per-session counts (`[fe]`)
-- [ ] Exit criteria: end-to-end workflows work in browser against a populated DB (`[fe]`)
+- [x] `Config.tsx` — sectioned forms → `GET/PUT /api/config` with dotted-key diff save (`[fe]`)
+- [x] `Calibrate.tsx` — RegionPicker snapshot drag-select, live OCR preview, save region (`[fe]`)
+- [x] `ImportExport.tsx` — upload + path inputs for replay/migrate; find-ports; export CSV (`[fe]`)
+- [x] `Sessions.tsx` — list sessions / per-session counts (`[fe]`)
+- [x] `components/`: FormField, FilePicker, RegionPicker; page tests for Config (`[fe]`)
+- [x] Exit criteria: end-to-end workflows work in browser against a populated DB (`[fe]`)
 
 ### Phase 6 — Polish, docs, CI
 - [ ] Error/empty/loading states across pages (`[fe]`)

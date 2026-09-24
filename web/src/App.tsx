@@ -1,6 +1,10 @@
 import { BrowserRouter, Link, Navigate, Route, Routes } from "react-router-dom";
+import Calibrate from "./pages/Calibrate";
+import Config from "./pages/Config";
 import Dashboard from "./pages/Dashboard";
+import ImportExport from "./pages/ImportExport";
 import Loot from "./pages/Loot";
+import Sessions from "./pages/Sessions";
 import Status from "./pages/Status";
 
 export default function App() {
@@ -12,6 +16,7 @@ export default function App() {
           <NavLink to="/status">Status</NavLink>
           <NavLink to="/dashboard">Dashboard</NavLink>
           <NavLink to="/loot">Loot</NavLink>
+          <NavLink to="/sessions">Sessions</NavLink>
           <NavLink to="/config">Config</NavLink>
           <NavLink to="/calibrate">Calibrate</NavLink>
           <NavLink to="/import">Import / Export</NavLink>
@@ -22,9 +27,10 @@ export default function App() {
             <Route path="/status" element={<Status />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/loot" element={<Loot />} />
-            <Route path="/config" element={<Placeholder title="Config" />} />
-            <Route path="/calibrate" element={<Placeholder title="Calibrate" />} />
-            <Route path="/import" element={<Placeholder title="Import / Export" />} />
+            <Route path="/sessions" element={<Sessions />} />
+            <Route path="/config" element={<Config />} />
+            <Route path="/calibrate" element={<Calibrate />} />
+            <Route path="/import" element={<ImportExport />} />
             <Route path="*" element={<Placeholder title="Not found" />} />
           </Routes>
         </main>
