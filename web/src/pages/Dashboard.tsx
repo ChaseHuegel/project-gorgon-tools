@@ -383,7 +383,7 @@ function Charts({
             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
             <XAxis dataKey="monster" tick={{ fill: "var(--muted)", fontSize: 11 }} angle={-35} textAnchor="end" height={70} />
             <YAxis tick={{ fill: "var(--muted)", fontSize: 12 }} />
-            <Tooltip contentStyle={tooltipStyle} />
+            <Tooltip content={<ChartTooltip />} />
             <Legend />
             <Bar dataKey="drops" name="Drops" fill="var(--accent)" />
             <Bar dataKey="quantity" name="Quantity" fill="var(--green)" />
@@ -406,7 +406,7 @@ function Charts({
                 <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
               ))}
             </Pie>
-            <Tooltip contentStyle={tooltipStyle} />
+            <Tooltip content={<ChartTooltip />} />
           </PieChart>
         </ResponsiveContainer>
       </ChartCard>
@@ -417,7 +417,7 @@ function Charts({
             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
             <XAxis dataKey="item" tick={{ fill: "var(--muted)", fontSize: 11 }} angle={-35} textAnchor="end" height={70} />
             <YAxis tick={{ fill: "var(--muted)", fontSize: 12 }} />
-            <Tooltip contentStyle={tooltipStyle} />
+            <Tooltip content={<ChartTooltip />} />
             <Legend />
             <Bar dataKey="drops" name="Drops" fill="var(--amber)" />
             <Bar dataKey="sources" name="Sources" fill="var(--green)" />
@@ -433,6 +433,40 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
     <div style={{ ...panelStyle, height: 300 }}>
       <h3 style={{ fontSize: "0.9rem", margin: "0 0 0.5rem" }}>{title}</h3>
       {children}
+    </div>
+  );
+}
+
+interface TooltipEntry {
+  name?: string;
+  value?: number;
+  color?: string;
+}
+
+function ChartTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: TooltipEntry[];
+  label?: string | number;
+}) {
+  if (!active || !payload || payload.length === 0) return null;
+  return (
+    <div style={tooltipStyle}>
+      {label != null && String(label) !== "" && (
+        <p style={{ margin: "0 0 0.35rem", fontWeight: 600 }}>{label}</p>
+      )}
+      {payload.map((p, i) => (
+        <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
+          {p.color && (
+            <span style={{ width: 9, height: 9, borderRadius: 2, background: p.color, flexShrink: 0 }} />
+          )}
+          <span>{p.name}</span>
+          <span style={{ marginLeft: "auto", fontWeight: 600 }}>{p.value}</span>
+        </div>
+      ))}
     </div>
   );
 }
