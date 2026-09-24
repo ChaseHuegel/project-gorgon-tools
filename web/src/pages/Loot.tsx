@@ -9,6 +9,7 @@ import { useSse } from "../hooks/useSse";
 export default function LootPage() {
   const { data, error, loading } = useApiData(() => api.loot(1000));
   const [live, setLive] = useState<LootRow[]>([]);
+  const [edits, setEdits] = useState<Record<number, LootRow>>({});
   const [monster, setMonster] = useState("");
   const [item, setItem] = useState("");
   const [activity, setActivity] = useState("");
@@ -35,7 +36,7 @@ export default function LootPage() {
   });
 
   const rows = useMemo(() => {
-    let list = [...live, ...(data ?? [])];
+    let list = [...live, ...(data ?? [])].map((r) => edits[r.id] ?? r);
     if (monster) list = list.filter((r) => r.source.includes(monster));
     if (item) list = list.filter((r) => r.item.toLowerCase().includes(item.toLowerCase()));
     if (activity) list = list.filter((r) => r.activity === activity);
@@ -43,7 +44,7 @@ export default function LootPage() {
     if (confidence === "high") list = list.filter((r) => r.linked_via === "monster");
     if (confidence === "uncertain") list = list.filter((r) => r.linked_via !== "monster");
     return list;
-  }, [live, data, monster, item, activity, status, confidence]);
+  }, [live, data, monster, item, activity, status, confidence, edits]);
 
   const distinct = (pick: (r: LootRow) => string) => [
     ...new Set([...(live ?? []), ...(data ?? [])].map(pick).filter(Boolean)),
@@ -51,7 +52,7 @@ export default function LootPage() {
 
   const applyOverride = async (row: LootRow, payload: LootOverride) => {
     const updated = await api.overrideLoot(row.id, payload);
-    setLive((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+    setEdits((prev) => ({ ...prev, [updated.id]: updated }));
     setEditingId(null);
   };
 
@@ -60,7 +61,13 @@ export default function LootPage() {
     const fresh = await api.loot(1000);
     const updated = fresh.find((r) => r.id === row.id);
     if (updated) {
-      setLive((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+      setEdits((prev) => ({ ...prev, [updated.id]: updated }));
+    } else {
+      setEdits((prev) => {
+        const next = { ...prev };
+        delete next[row.id];
+        return next;
+      });
     }
     setEditingId(null);
   };
