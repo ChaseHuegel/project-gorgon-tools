@@ -46,7 +46,7 @@ export function DataTable<T>({
 
   if (rows.length === 0) return <p style={{ color: "var(--muted)" }}>{empty}</p>;
   return (
-    <div style={{ overflowX: "auto" }}>
+    <div style={{ overflowX: "auto", minWidth: 0 }}>
       <table
         style={{
           width: "100%",

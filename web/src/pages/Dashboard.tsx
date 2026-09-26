@@ -1044,7 +1044,7 @@ function DetailTables({
           : (data as ItemDetail).zones;
 
   return (
-    <div style={{ display: "grid", gap: "1rem", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", marginTop: "0.75rem" }}>
+    <div style={{ display: "grid", gap: "1rem", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 600px), 1fr))", marginTop: "0.75rem" }}>
       {kind === "item" && (data as ItemDetail).metadata && <ItemMetaBlock meta={(data as ItemDetail).metadata!} />}
       {kind === "source" && (
         <DataTable
