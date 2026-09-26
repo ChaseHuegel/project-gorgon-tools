@@ -11,6 +11,7 @@ from typing import Any
 from . import db
 from .config import TrackerConfig
 from .correlator import (
+    ActivityEvent,
     BuryEvent,
     CorpseSearch,
     Correlator,
@@ -86,12 +87,14 @@ def run_replay(
         retroactive_threshold=cfg.correlate.retroactive_threshold,
         target_fallback_seconds=cfg.correlate.target_fallback_seconds,
         search_corroboration_seconds=cfg.correlate.search_corroboration_seconds,
+        activity_window_seconds=cfg.correlate.activity_window_seconds,
     )
 
     windows: list[tuple[int, int]] = []
     source_events: list[SourceEvent] = []
     loot_events: list[LootEvent] = []
     bury_events: list[BuryEvent] = []
+    activity_events: list[ActivityEvent] = []
     zone_changes: list[ZoneChange] = []
     target_sightings: list[TargetSighting] = []
     interactions: list[InteractionStart] = []
@@ -135,10 +138,7 @@ def run_replay(
             parsed_files += 1
         elif kind == "chat":
             for event in chat_parser.parse_chat_file(path):
-                if isinstance(event, LootEvent):
-                    loot_events.append(event)
-                else:
-                    bury_events.append(event)
+                _route_chat_event(event, loot_events, bury_events, activity_events)
             parsed_files += 1
         elif kind == "playerlog":
             for plog_event in playerlog_parser.parse_player_log_file(path):
@@ -167,10 +167,7 @@ def run_replay(
     if chat_dir is not None:
         for path in sorted(chat_dir.glob("*.log")) + sorted(chat_dir.glob("*.txt")):
             for event in chat_parser.parse_chat_file(path):
-                if isinstance(event, LootEvent):
-                    loot_events.append(event)
-                else:
-                    bury_events.append(event)
+                _route_chat_event(event, loot_events, bury_events, activity_events)
 
     # Drop validity: only loot that falls inside a packet-capture window is kept.
     filtered = 0
@@ -195,6 +192,8 @@ def run_replay(
         timeline.append((source_evt.time_ms, 2, source_evt))
     for bury_evt in bury_events:
         timeline.append((bury_evt.time_ms, 2, bury_evt))
+    for activity_evt in activity_events:
+        timeline.append((activity_evt.time_ms, 2, activity_evt))
     for interaction in interactions:
         timeline.append((interaction.time_ms, 2, interaction))
     for corpse_search in corpse_searches:
@@ -213,6 +212,9 @@ def run_replay(
         elif isinstance(timeline_event, BuryEvent):
             writer.bury(timeline_event)
             correlator.ingest_bury(timeline_event)
+        elif isinstance(timeline_event, ActivityEvent):
+            writer.activity(timeline_event)
+            correlator.ingest_activity(timeline_event)
         elif isinstance(timeline_event, LootEvent):
             writer.loot(timeline_event)
             correlator.ingest_loot(timeline_event)
@@ -247,6 +249,7 @@ def run_replay(
         "zones": len(zone_changes),
         "targets": len(target_sightings),
         "burials": len(bury_events),
+        "activities": len(activity_events),
         "drops": len(drops),
     }
 
@@ -277,6 +280,21 @@ def _route_event(
             corpse_searches.append(event)
         else:
             item_codes.append(event)
+    else:
+        assert isinstance(event, BuryEvent)
+        bury_events.append(event)
+
+
+def _route_chat_event(
+    event: object,
+    loot_events: list[LootEvent],
+    bury_events: list[BuryEvent],
+    activity_events: list[ActivityEvent],
+) -> None:
+    if isinstance(event, LootEvent):
+        loot_events.append(event)
+    elif isinstance(event, ActivityEvent):
+        activity_events.append(event)
     else:
         assert isinstance(event, BuryEvent)
         bury_events.append(event)

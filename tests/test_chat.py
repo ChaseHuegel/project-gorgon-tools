@@ -31,8 +31,26 @@ def test_parse_bury() -> None:
 
 def test_nonmatching_lines_ignored() -> None:
     assert chat.parse_chat_line("") is None
-    assert chat.parse_chat_line("26-01-11 12:00:00 [Status] You skin the corpse.") is None
+    assert chat.parse_chat_line("[Status] You skin the corpse.") is None  # no timestamp
     assert chat.parse_chat_line("garbage") is None
+
+
+def test_status_activity_lines_parse() -> None:
+    skin = chat.parse_chat_line(f"{scenario.local_wall(4.0)} [Status] You skin the corpse.")
+    assert isinstance(skin, chat.ActivityEvent)
+    assert skin.activity == "Skinning"
+    assert skin.time_ms == scenario.at(4.0) - scenario.at(4.0) % 1000
+    butcher = chat.parse_chat_line(f"{scenario.local_wall(5.0)} [Status] You butcher the corpse.")
+    assert isinstance(butcher, chat.ActivityEvent)
+    assert butcher.activity == "Butchering"
+    extract = chat.parse_chat_line(f"{scenario.local_wall(6.0)} [Status] You extract the skull.")
+    assert isinstance(extract, chat.ActivityEvent)
+    assert extract.activity == "Extracting"
+
+
+def test_non_activity_status_lines_ignored() -> None:
+    assert chat.parse_chat_line(f"{scenario.local_wall(1.0)} [Status] You craft something.") is None
+    assert chat.parse_chat_line(f"{scenario.local_wall(1.0)} [Status] You failed to skin the corpse.") is None
 
 
 def test_parse_chat_lines_skips_noise() -> None:

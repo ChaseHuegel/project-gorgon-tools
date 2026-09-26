@@ -95,6 +95,19 @@ def test_corpse_search_parses_monster_killer_and_participants() -> None:
     assert search.extractions == {"extracted": "Impressive Goblin Skull"}
 
 
+def test_corpse_search_parses_skinned_and_butchered() -> None:
+    line = (
+        '[20:00:01] LocalPlayer: ProcessTalkScreen(1001, "Search Corpse of Giant Bat", '
+        '"\\n<em>Cause of death:</em> Killed by the living dead\\n<em>Killer:</em> Tester\\n\\n'
+        'Tester skinned a Pelt from the corpse.\\nTester butchered Pork from the corpse.", '
+        '"", [], System.String[], 1, Corpse)'
+    )
+    events = run([LOGIN, line])
+    searches = [e for e in events if isinstance(e, CorpseSearch)]
+    assert len(searches) == 1
+    assert searches[0].extractions == {"skinned": "a Pelt", "butchered": "Pork"}
+
+
 def test_corpse_window_marked_missed_when_remove_loot_unmatched() -> None:
     events = run(
         [

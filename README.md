@@ -15,8 +15,12 @@ Design and phase tracking: [`MIGRATION_PLAN.md`](MIGRATION_PLAN.md).
 - One command (`run`) opens a capture session; capture happens passively in the background.
 - Sources: live packet capture via `tshark`, incremental tailing of the Proton chat log,
   the game's Unity `Player.log` (authoritative inventory pickups, corpse attribution with
-  killer damage tables, missed-loot on inventory-full, and coin pickups), and OCR
+  killer damage tables, missed-loot on inventory-full, coin pickups), and OCR
   (tesseract) of the on-screen zone and target regions.
+- Loot is classified by activity (`Skinning`/`Butchering`/`Extracting`/`Looting`/`Harvesting`):
+  corpse-description "skinned/butchered/extracted" transitions in `Player.log` and
+  `You skin/butcher/extract ...` chat status lines label nearby pickups, alongside the
+  packet `can_*` flag transitions; a corpse that already shows the action never relabels.
 - Everything lands in SQLite (WAL): raw events + typed events + correlated `loot_drops`,
   grouped into sessions you can start and stop freely.
 - Offline tools: `replay` historical `.pcapng`/JSON/chat/CSV bundles, `migrate` legacy

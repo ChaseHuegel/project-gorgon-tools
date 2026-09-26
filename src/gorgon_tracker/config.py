@@ -69,6 +69,12 @@ class CorrelateConfig(BaseModel):
     buffer_seconds: float = 10.0
     session_timeout: float = 3.0
     retroactive_threshold: float = 0.9
+    # How close to a corpse-description transition (Unity Player.log `skinned/
+    # butchered/extracted` line) or a chat status marker a drop must be to inherit
+    # that activity. The Unity log stamps whole seconds, so a pickup and the
+    # description update naming the action can be ~1s apart (the 0.9s retroactive
+    # threshold is tuned to packet timing and stays for the packet path).
+    activity_window_seconds: float = 2.0
     # How stale a target sighting may be to compete with (or substitute for) a
     # monster source. Looting/harvesting targets the entity being looted, so a
     # fresh sighting is strong evidence; old sightings are coincidence risk.

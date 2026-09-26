@@ -82,11 +82,20 @@ ALTER TABLE items ADD COLUMN icon_id INTEGER;
 ALTER TABLE items ADD COLUMN data_version TEXT;
 """
 
+# v5: corpse-description audit trail. The corpse-search talk screen names the
+# items taken by each action ("Mennelaia skinned a Pelt from the corpse."); those
+# verb/item pairs drive Skinning/Butchering/Extracting attribution, so they are
+# retained alongside the killer for review and debugging.
+_MIGRATION_V5_SQL = """
+ALTER TABLE corpse_searches ADD COLUMN extractions_json TEXT NOT NULL DEFAULT '{}';
+"""
+
 MIGRATIONS: list[tuple[int, str]] = [
     (1, _SCHEMA_SQL),
     (2, _MIGRATION_V2_SQL),
     (3, _MIGRATION_V3_SQL),
     (4, _MIGRATION_V4_SQL),
+    (5, _MIGRATION_V5_SQL),
 ]
 
 COUNT_TABLES = (
@@ -278,6 +287,7 @@ def insert_corpse_search(
     monster: str,
     killer: str | None = None,
     participants: dict[str, Any] | None = None,
+    extractions: dict[str, Any] | None = None,
 ) -> int:
     import json as _json
 
@@ -292,6 +302,7 @@ def insert_corpse_search(
             "monster": monster,
             "killer": killer,
             "participants_json": _json.dumps(participants or {}),
+            "extractions_json": _json.dumps(extractions or {}),
         },
     )
 

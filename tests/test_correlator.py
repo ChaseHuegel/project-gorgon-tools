@@ -1,4 +1,5 @@
 from gorgon_tracker.correlator import (
+    ActivityEvent,
     BuryEvent,
     CorpseSearch,
     Correlator,
@@ -38,6 +39,8 @@ def _run(correlator: Correlator, events) -> list:
             correlator.ingest_corpse_search(event)
         elif kind == "interaction":
             correlator.ingest_interaction(event)
+        elif kind == "activity":
+            correlator.ingest_activity(event)
     return correlator.finalize()
 
 
@@ -410,3 +413,135 @@ def test_missed_loot_is_flagged_missed() -> None:
     assert len(drops) == 1
     assert drops[0].status == "Missed"
     assert drops[0].missed is True
+
+
+# --- corpse-description activity transitions (Unity Player.log) ----------------
+
+
+def _corpse(sec: float, monster: str, entity_id: int, extractions=None) -> CorpseSearch:
+    return CorpseSearch(
+        time_ms=make(sec),
+        monster=monster,
+        entity_id=entity_id,
+        extractions=extractions or {},
+    )
+
+
+def test_corpse_description_transition_marks_skinning() -> None:
+    c = Correlator(activity_window_seconds=2.0)
+    drops = _run(
+        c,
+        [
+            ("interaction", InteractionStart(time_ms=make(1.0), entity_id=501)),
+            ("corpse", _corpse(2.0, "Giant Bat", 501)),
+            ("loot", loot(3.0, "Bat Wing")),
+            ("corpse", _corpse(4.0, "Giant Bat", 501, {"skinned": "Bat Wing"})),
+        ],
+    )
+    assert len(drops) == 1
+    assert drops[0].source == "Giant Bat"
+    assert drops[0].activity == "Skinning"
+
+
+def test_corpse_description_butcher_and_extract_transitions() -> None:
+    c = Correlator(activity_window_seconds=2.0)
+    drops = _run(
+        c,
+        [
+            ("interaction", InteractionStart(time_ms=make(1.0), entity_id=601)),
+            ("corpse", _corpse(2.0, "Boar", 601)),
+            ("loot", loot(3.0, "Pork")),
+            ("corpse", _corpse(4.0, "Boar", 601, {"butchered": "Pork"})),
+            ("loot", loot(5.0, "Skull")),
+            ("corpse", _corpse(6.0, "Boar", 601, {"butchered": "Pork", "extracted": "Skull"})),
+        ],
+    )
+    assert [d.activity for d in drops] == ["Butchering", "Extracting"]
+
+
+def test_corpse_first_seen_already_skinned_stays_looting() -> None:
+    """A corpse that already shows skinned when first searched is not a fresh action."""
+    c = Correlator(activity_window_seconds=2.0)
+    drops = _run(
+        c,
+        [
+            ("interaction", InteractionStart(time_ms=make(1.0), entity_id=501)),
+            ("loot", loot(3.0, "Bat Wing")),
+            ("corpse", _corpse(4.0, "Giant Bat", 501, {"skinned": "Bat Wing"})),
+        ],
+    )
+    assert drops[0].activity == "Looting"
+
+
+def test_corpse_repeated_skinned_state_stays_looting() -> None:
+    """Sequential searches already showing skinned never relabel as skinning."""
+    c = Correlator(activity_window_seconds=2.0)
+    drops = _run(
+        c,
+        [
+            ("interaction", InteractionStart(time_ms=make(1.0), entity_id=501)),
+            ("corpse", _corpse(2.0, "Giant Bat", 501, {"skinned": "Bat Wing"})),
+            ("loot", loot(3.0, "Bat Wing")),
+            ("corpse", _corpse(4.0, "Giant Bat", 501, {"skinned": "Bat Wing"})),
+        ],
+    )
+    assert drops[0].activity == "Looting"
+
+
+# --- chat status activity markers ---------------------------------------------
+
+
+def test_chat_activity_marker_labels_drop_linked_to_monster() -> None:
+    c = Correlator(activity_window_seconds=2.0)
+    drops = _run(
+        c,
+        [
+            ("source", src(1.0, "Boar")),
+            ("loot", loot(3.0, "Pork")),
+            ("activity", ActivityEvent(time_ms=make(4.0), activity="Butchering")),
+            ("source", src(5.0, "Boar")),
+        ],
+    )
+    assert len(drops) == 1
+    assert drops[0].source == "Boar"
+    assert drops[0].status == "Linked"
+    assert drops[0].activity == "Butchering"
+
+
+def test_chat_activity_marker_labels_orphan_drop() -> None:
+    c = Correlator(activity_window_seconds=2.0)
+    drops = _run(
+        c,
+        [
+            ("loot", loot(3.0, "Pork")),
+            ("activity", ActivityEvent(time_ms=make(4.0), activity="Butchering")),
+            ("bury", BuryEvent(time_ms=make(5.0))),
+        ],
+    )
+    assert drops[0].activity == "Butchering"
+
+
+def test_chat_activity_marker_outside_window_stays_looting() -> None:
+    c = Correlator(activity_window_seconds=2.0)
+    drops = _run(
+        c,
+        [
+            ("source", src(1.0, "Boar")),
+            ("loot", loot(10.0, "Pork")),
+            ("activity", ActivityEvent(time_ms=make(13.0), activity="Butchering")),
+        ],
+    )
+    assert drops[0].activity == "Looting"
+
+
+def test_bury_clears_activity_hint() -> None:
+    c = Correlator(activity_window_seconds=2.0)
+    drops = _run(
+        c,
+        [
+            ("activity", ActivityEvent(time_ms=make(1.0), activity="Skinning")),
+            ("bury", BuryEvent(time_ms=make(2.0))),
+            ("loot", loot(3.0, "Bat Wing")),
+        ],
+    )
+    assert drops[0].activity == "Looting"

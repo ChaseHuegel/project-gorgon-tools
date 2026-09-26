@@ -90,6 +90,10 @@ Proton default (configurable): `<steam-library>/steamapps/compatdata/1118200/pfx
   → `count` defaults to `1`; timestamp parsed with `yy-MM-dd HH:mm:ss` (InvariantCulture).
 - **Bury event:**
   `^(?<timestamp>[\d-]+\s+[\d:]+)\s+\[Status\]\s+You bury the corpse\.$`
+- **Corpse-activity marker** (new; complementary signal for `ActivityEvent`):
+  `^(?<timestamp>[\d-]+\s+[\d:]+)\s+\[Status\]\s+You (skin|butcher|extract)\w*\b`
+  → mapped to `Skinning`/`Butchering`/`Extracting` and pinned onto loot drops whose
+  pickup time is within the correlate `activity_window_seconds`.
 
 ### 3.2 Packet parsing (from `ProjectGorgon-ParsePackets.ps1`)
 
@@ -397,6 +401,13 @@ Agents working on this project must update this section. Mark items `[x]` only w
 - [x] Export: overrides applied; `--with-evidence` appends audit columns (legacy header unchanged by default)
 - [x] `sniff-inspect`: live (raw pcap retained) + offline `--pcap` modes; `strings.csv` token inventory; per-TCP-stream per-direction payload dumps; CLI command + tests
 - [x] Tests/docs: correlator evidence + harvestable classification, db v2 migration + overrides, serve filters, override API, sniff-inspect; MIGRATION_PLAN §3.3 rationale updated
+
+### Corpse-activity identification (skinning / butchering / extracting)
+- [x] `ActivityEvent` (chat status marker `You skin/butcher/extract ...`) + `Correlator.ingest_activity`; drops within `correlate.activity_window_seconds` (default 2.0s) inherit the activity in both the monster-linked and orphan branches
+- [x] Corpse-description transitions from the Unity `Player.log`: each `ProcessTalkScreen("Search Corpse of X")` shows the actions already performed (`skinned/butchered/extracted <item> from the corpse.`); a verb newly appearing on a previously-seen corpse flushes that search's pending loot as the activity. A corpse first seen already showing the verb — or searched again with it unchanged — never relabels (the "already skinned" exclusion)
+- [x] Whole-second `Player.log` stamps use the wider activity window (0.9s retroactive threshold stays for the packet `can_*` path)
+- [x] DB: migration v5 `corpse_searches.extractions_json` records the verb/item pairs that drove each attribution; `DbWriter.activity` persists chat markers as raw events
+- [x] Tests: correlator transitions + negatives, chat markers, player-log verb extraction, db extractions roundtrip, replay end-to-end; legacy packet-path behavior covered by the unchanged golden scenario
 
 ### Item/zone catalog preseed (official game-data CDN)
 - [x] `catalog.py`: bundled `items.json` (slug -> display + value/stack/keywords/icon) and `areas.json` (area id -> friendly/short name + adjacency), user-dir override, `update_catalog_files` + version pinning (CDN keeps only the last few game-data versions)

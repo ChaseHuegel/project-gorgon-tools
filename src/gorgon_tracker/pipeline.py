@@ -13,6 +13,7 @@ from sqlite3 import Connection
 from . import db
 from .config import TrackerConfig
 from .correlator import (
+    ActivityEvent,
     BuryEvent,
     CorpseSearch,
     Correlator,
@@ -56,6 +57,10 @@ def _dispatch(event: object, writer: DbWriter, correlator: Correlator) -> str:
         writer.bury(event)
         correlator.ingest_bury(event)
         return "bury"
+    if isinstance(event, ActivityEvent):
+        writer.activity(event)
+        correlator.ingest_activity(event)
+        return "activity"
     if isinstance(event, LootEvent):
         writer.loot(event)
         correlator.ingest_loot(event)
@@ -170,6 +175,7 @@ def _run_pipeline_inner(
         retroactive_threshold=cfg.correlate.retroactive_threshold,
         target_fallback_seconds=cfg.correlate.target_fallback_seconds,
         search_corroboration_seconds=cfg.correlate.search_corroboration_seconds,
+        activity_window_seconds=cfg.correlate.activity_window_seconds,
     )
     counters: Counter[str] = Counter()
     last_status = time.monotonic()

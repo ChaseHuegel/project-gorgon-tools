@@ -8,6 +8,7 @@ from typing import Any
 
 from . import db
 from .correlator import (
+    ActivityEvent,
     BuryEvent,
     CorpseSearch,
     InteractionStart,
@@ -101,7 +102,11 @@ class DbWriter:
             event.monster,
             killer=event.killer,
             participants=event.participants,
+            extractions=event.extractions,
         )
+
+    def activity(self, event: ActivityEvent) -> int:
+        return self._raw("chat", event.time_ms, {"activity": event.activity})
 
     def raw_item_code(self, event: ItemCode) -> int:
         return self._raw(

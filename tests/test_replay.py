@@ -123,3 +123,54 @@ def test_replay_builds_consolidated_session(tmp_path: Path) -> None:
     assert overview["open_session_id"] is None  # replay sessions are retrospective
     assert stats["session_id"] is not None
     conn.close()
+
+
+def test_replay_attributes_corpse_description_skinning(tmp_path: Path) -> None:
+    """A corpse description gaining a ``skinned`` line labels the loot as Skinning."""
+    playerlog = tmp_path / "Player.log"
+    playerlog.write_text(
+        "\n".join(
+            [
+                "[20:00:00] Logged in as character Tester. Time UTC=01/11/2026 20:00:00. "
+                "Timezone Offset -01:00:00.",
+                '[20:00:01] LocalPlayer: ProcessStartInteraction(501, 13.5, 0, False, "")',
+                "[20:00:02] LocalPlayer: ProcessAddItem(BatWing(-1), -1, True)",
+                '[20:00:03] LocalPlayer: ProcessTalkScreen(501, "Search Corpse of Giant Bat", '
+                '"\\n<em>Killer:</em> Tester\\n", "", [], System.String[], 1, Corpse)',
+                "[20:00:04] LocalPlayer: ProcessAddItem(GiantBatWing(-2), -1, True)",
+                '[20:00:05] LocalPlayer: ProcessTalkScreen(501, "Search Corpse of Giant Bat", '
+                '"\\n<em>Killer:</em> Tester\\n\\nTester skinned a Pelt from the corpse.", '
+                '"", [], System.String[], 1, Corpse)',
+                '[20:00:06] LocalPlayer: ProcessScreenText(GeneralInfo, "You bury the corpse.")',
+            ]
+        )
+        + "\n"
+    )
+    conn = _connect(tmp_path)
+    stats = run_replay(conn, TrackerConfig(), expand_inputs([playerlog]))
+    assert stats["loot_kept"] == 2
+    rows = conn.execute("SELECT captured_at, activity FROM loot_drops ORDER BY captured_at").fetchall()
+    assert [r["activity"] for r in rows] == ["Looting", "Skinning"]
+    conn.close()
+
+
+def test_replay_chat_activity_markers_label_drops(tmp_path: Path) -> None:
+    """A ``You butcher the corpse.`` status line labels the nearby pickup."""
+    chat = tmp_path / "chatsession.log"
+    chat.write_text(
+        "\n".join(
+            [
+                f"{scenario.local_wall(1.0)} [Status] Pork added to inventory.",
+                f"{scenario.local_wall(2.0)} [Status] You butcher the corpse.",
+                f"{scenario.local_wall(3.0)} [Status] You bury the corpse.",
+            ]
+        )
+        + "\n"
+    )
+    conn = _connect(tmp_path)
+    stats = run_replay(conn, TrackerConfig(), expand_inputs([chat]))
+    assert stats["activities"] == 1
+    row = conn.execute("SELECT item, activity FROM loot_drops ORDER BY captured_at").fetchone()
+    assert row["item"] == "Pork"
+    assert row["activity"] == "Butchering"
+    conn.close()

@@ -261,6 +261,23 @@ def test_insert_corpse_search_and_item_learning(tmp_path: Path) -> None:
     )
     assert isinstance(search_id, int)
 
+    extra_id = db.insert_corpse_search(
+        conn,
+        session_id,
+        raw_id,
+        2000,
+        43,
+        "Giant Bat",
+        extractions={"skinned": "a Pelt", "butchered": "Pork"},
+    )
+    row = conn.execute(
+        "SELECT extractions_json FROM corpse_searches WHERE id = ?", (extra_id,)
+    ).fetchone()
+    assert row["extractions_json"] == '{"skinned": "a Pelt", "butchered": "Pork"}'
+    assert conn.execute(
+        "SELECT extractions_json FROM corpse_searches WHERE id = ?", (search_id,)
+    ).fetchone()["extractions_json"] == "{}"
+
     db.record_item(conn, "GoblinCallingCard", "15", "Gottak's Calling Card", 1000, inferred=False)
     assert db.get_item_display(conn, "GoblinCallingCard", "15") == "Gottak's Calling Card"
     db.record_item(conn, "GoblinCallingCard", "15", "Gottak's Calling Card", 2000)
