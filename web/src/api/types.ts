@@ -13,6 +13,7 @@ export interface Status {
   open_session_counts: Record<string, number> | null;
   daemon: DaemonInfo;
   warnings: string[];
+  publish: { configured: boolean; url: string };
 }
 
 export interface OcrRegion {
@@ -202,6 +203,8 @@ export interface LootRow {
   corroborated_by_search: boolean;
   note: string | null;
   overridden: boolean;
+  published?: boolean;
+  published_at?: number | null;
 }
 
 export interface LootOverride {

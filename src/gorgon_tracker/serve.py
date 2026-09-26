@@ -23,8 +23,10 @@ _QUERIES: dict[str, str] = {
         " ld.status, ld.lag_ms, ld.linked_via, ld.monster_name, ld.monster_lag_ms,"
         " ld.target_name, ld.target_lag_ms, ld.corroborated_by_search,"
         " ov.source AS ov_source, ov.status AS ov_status, ov.activity AS ov_activity,"
-        " ov.note AS ov_note "
-        "FROM loot_drops ld LEFT JOIN loot_overrides ov ON ov.loot_drop_id = ld.id"
+        " ov.note AS ov_note, pub.published_at AS published_at "
+        "FROM loot_drops ld"
+        " LEFT JOIN loot_overrides ov ON ov.loot_drop_id = ld.id"
+        " LEFT JOIN loot_publications pub ON pub.loot_drop_id = ld.id"
         " ORDER BY ld.captured_at DESC LIMIT ?"
     ),
 }
@@ -42,6 +44,7 @@ _LOOT_EFFECTIVE_FIELDS = (
     "target_name",
     "target_lag_ms",
     "corroborated_by_search",
+    "published_at",
 )
 
 
@@ -49,6 +52,7 @@ def _effective_loot_row(row: dict[str, Any]) -> dict[str, Any]:
     """Merge a manual override over the correlated values of one loot row."""
     cleaned = {k: row.get(k) for k in _LOOT_EFFECTIVE_FIELDS}
     cleaned["corroborated_by_search"] = bool(cleaned["corroborated_by_search"])
+    cleaned["published"] = cleaned.get("published_at") is not None
     overridden = any(row.get(f"ov_{field}") is not None for field in ("source", "status", "activity"))
     cleaned["source"] = row.get("ov_source") or row.get("source")
     cleaned["status"] = row.get("ov_status") or row.get("status")

@@ -113,6 +113,31 @@ class CatalogConfig(BaseModel):
     data_dir: str = ""
 
 
+class PublishConfig(BaseModel):
+    """Publish verified loot rows from the local tool to a public server.
+
+    When ``url`` is set and ``enabled`` is true, the Loot page offers a Publish
+    action that POSTs the selected effective rows to ``<url>/api/ingest/loot``
+    using ``token`` as a bearer credential.
+    """
+
+    enabled: bool = False
+    url: str = ""
+    token: str = ""
+
+
+class ServeConfig(BaseModel):
+    """Public deployment surface (``gorgon-tracker serve``).
+
+    ``ingest_enabled`` and ``ingest_token`` gate the single write endpoint on
+    the public server (``POST /api/ingest/loot``). When disabled (default) the
+    public server exposes only read routes, SSE, and the public SPA.
+    """
+
+    ingest_enabled: bool = False
+    ingest_token: str = ""
+
+
 class TrackerConfig(BaseModel):
     db: DbConfig = Field(default_factory=DbConfig)
     capture: CaptureConfig = Field(default_factory=CaptureConfig)
@@ -122,6 +147,8 @@ class TrackerConfig(BaseModel):
     correlate: CorrelateConfig = Field(default_factory=CorrelateConfig)
     names: NamesConfig = Field(default_factory=NamesConfig)
     catalog: CatalogConfig = Field(default_factory=CatalogConfig)
+    publish: PublishConfig = Field(default_factory=PublishConfig)
+    serve: ServeConfig = Field(default_factory=ServeConfig)
 
 
 _PROTON_CHAT_SUFFIX = (

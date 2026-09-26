@@ -3,8 +3,9 @@ import { api, exportUrl, streamUrl } from "../api/client";
 import type { LootOverride, LootRow } from "../api/types";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { DataTable, fmtTime } from "../components/DataTable";
+import { Evidence, LinkBadge, Badge } from "../components/LootEvidence";
 import { Page } from "../components/Page";
-import { useApiData } from "../hooks/useApi";
+import { useApiData, useStatus } from "../hooks/useApi";
 import { useSse } from "../hooks/useSse";
 
 export default function LootPage() {
@@ -21,6 +22,10 @@ export default function LootPage() {
   const [confirmDelete, setConfirmDelete] = useState<number[] | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [publishing, setPublishing] = useState(false);
+  const [publishMessage, setPublishMessage] = useState<string | null>(null);
+  const { data: statusData } = useStatus(0);
+  const publishConfigured = Boolean(statusData?.publish?.configured);
   const lastIdRef = useRef(0);
 
   const maxId = useMemo(() => {
@@ -118,6 +123,26 @@ export default function LootPage() {
     }
   };
 
+  const publishSelected = async () => {
+    if (selected.length === 0) return;
+    setPublishing(true);
+    setPublishMessage(null);
+    try {
+      const res = await api.publishLoot(selected);
+      const bits = [`Published ${res.published.toLocaleString()} row(s)`];
+      bits.push(`${res.created.toLocaleString()} new`);
+      if (res.replaced) bits.push(`${res.replaced.toLocaleString()} re-published`);
+      if (res.failed) bits.push(`${res.failed.toLocaleString()} failed`);
+      setPublishMessage(`${bits.join(" · ")}.`);
+      setSelected([]);
+      reload();
+    } catch (e) {
+      setPublishMessage(`Publish failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setPublishing(false);
+    }
+  };
+
   return (
     <Page
       title="Loot stream"
@@ -162,7 +187,22 @@ export default function LootPage() {
             Delete selected ({selected.length})
           </button>
         )}
+        {selected.length > 0 && (
+          <button
+            onClick={publishSelected}
+            disabled={publishing || !publishConfigured}
+            style={publishBtnStyle}
+            title={
+              publishConfigured
+                ? undefined
+                : "Publishing is not configured: set [publish] enabled/url/token in the config file"
+            }
+          >
+            {publishing ? "Publishing…" : `Publish selected (${selected.length})`}
+          </button>
+        )}
         {deleteError && <span style={{ color: "var(--red)", fontSize: "0.85rem" }}>{deleteError}</span>}
+        {publishMessage && <span style={{ color: "var(--accent)", fontSize: "0.85rem" }}>{publishMessage}</span>}
       </div>
       <DataTable<LootRow>
         rows={rows}
@@ -215,9 +255,14 @@ export default function LootPage() {
             key: "status",
             header: "Status",
             render: (r) => (
-              <span style={{ color: r.status === "Linked" ? "var(--green)" : "var(--amber)" }}>
-                {r.status}
-                {r.overridden ? " (overridden)" : ""}
+              <span style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
+                <span style={{ color: r.status === "Linked" ? "var(--green)" : "var(--amber)" }}>
+                  {r.status}
+                  {r.overridden ? " (overridden)" : ""}
+                </span>
+                {r.published && (
+                  <Badge tone="green">published {r.published_at ? fmtTime(r.published_at) : ""}</Badge>
+                )}
               </span>
             ),
           },
@@ -263,37 +308,6 @@ export default function LootPage() {
         />
       )}
     </Page>
-  );
-}
-
-function LinkBadge({ row }: { row: LootRow }) {
-  if (row.linked_via === "monster") {
-    return <Badge tone="green">monster</Badge>;
-  }
-  if (row.linked_via === "target") {
-    return <Badge tone={row.corroborated_by_search ? "blue" : "amber"}>target</Badge>;
-  }
-  return <Badge tone="amber">orphan</Badge>;
-}
-
-function Evidence({ row }: { row: LootRow }) {
-  const bits: string[] = [];
-  if (row.monster_name && row.monster_name !== row.source) {
-    bits.push(`monster "${row.monster_name}"${row.monster_lag_ms != null ? ` -${row.monster_lag_ms}ms` : ""}`);
-  } else if (row.monster_lag_ms != null && row.linked_via === "monster") {
-    bits.push(`search -${row.monster_lag_ms}ms`);
-  }
-  if (row.target_name && row.target_name !== row.source) {
-    bits.push(`target "${row.target_name}"${row.target_lag_ms != null ? ` -${row.target_lag_ms}ms` : ""}`);
-  }
-  if (row.linked_via === "target" && row.corroborated_by_search) {
-    bits.push("corroborated by corpse search");
-  }
-  if (!bits.length) return <span style={{ color: "var(--muted)" }}>—</span>;
-  return (
-    <span style={{ fontSize: "0.85em", color: "var(--muted)" }} title={row.note ?? undefined}>
-      {bits.join("; ")}
-    </span>
   );
 }
 
@@ -356,27 +370,6 @@ function EditRow({
   );
 }
 
-function Badge({ tone, children }: { tone: "green" | "amber" | "blue"; children: React.ReactNode }) {
-  const colors: Record<string, string> = {
-    green: "var(--green)",
-    amber: "var(--amber)",
-    blue: "#6ab0ff",
-  };
-  return (
-    <span
-      style={{
-        fontSize: "0.75em",
-        border: `1px solid ${colors[tone]}`,
-        color: colors[tone],
-        borderRadius: 4,
-        padding: "0 0.35rem",
-      }}
-    >
-      {children}
-    </span>
-  );
-}
-
 function Select({
   value,
   onChange,
@@ -421,6 +414,15 @@ const dangerBtnStyle: React.CSSProperties = {
   border: "1px solid var(--red)",
   background: "transparent",
   color: "var(--red)",
+  borderRadius: 6,
+  padding: "0.3rem 0.6rem",
+  cursor: "pointer",
+};
+
+const publishBtnStyle: React.CSSProperties = {
+  border: "1px solid var(--accent)",
+  background: "rgba(79, 156, 249, 0.12)",
+  color: "var(--accent)",
   borderRadius: 6,
   padding: "0.3rem 0.6rem",
   cursor: "pointer",

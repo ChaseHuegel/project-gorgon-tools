@@ -401,14 +401,15 @@ def serve(
     ctx: typer.Context,
     host: str = typer.Option("127.0.0.1", help="Bind host."),
     port: int = typer.Option(8000, help="Bind port."),
+    config_file: str | None = typer.Option(None, "--config", "-c", help="Path to a gorgon-tracker.toml file."),
     db_path: str | None = typer.Option(None, "--db", help="Override the SQLite database path."),
 ) -> None:
-    """Serve the loot data over a read-only HTTP API."""
-    from . import serve as serve_mod
+    """Serve the loot data publicly: read-only API, public UI, optional ingest."""
+    from . import public as public_mod
 
     _apply_db(ctx, db_path)
     console.print(f"[cyan]Serving {ctx.obj.db.path} at http://{host}:{port}[/cyan]")
-    serve_mod.run_serve(ctx.obj.db.path, host, port)
+    public_mod.run_public(ctx.obj.db.path, config_file, host, port)
 
 
 @app.command()

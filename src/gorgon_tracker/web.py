@@ -9,15 +9,15 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Body, FastAPI, File, Form, HTTPException, Response, UploadFile
-from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
 from . import config_write as config_write_mod
 from . import control, db
 from .serve import build_read_router
+from .spa import mount_spa
 
 _APP_ROOT = Path(__file__).resolve().parent
-_STATIC_DIR = _APP_ROOT / "static"
+_STATIC_DIR = _APP_ROOT / "static" / "app"
 
 
 def _upload_dir(db_path: str) -> Path:
@@ -83,6 +83,10 @@ def build_control_router(db_path: str, config_path: str | None = None) -> APIRou
             "open_session_counts": overview["open_session_counts"],
             "daemon": control.daemon_status(db_path),
             "warnings": control.setup_warnings(cfg),
+            "publish": {
+                "configured": cfg.publish.enabled and bool(cfg.publish.url) and bool(cfg.publish.token),
+                "url": cfg.publish.url,
+            },
         }
 
     # --- chat log tail ------------------------------------------------------
@@ -312,8 +316,11 @@ def build_control_router(db_path: str, config_path: str | None = None) -> APIRou
                 " ld.zone, ld.status, ld.lag_ms, ld.linked_via, ld.monster_name,"
                 " ld.monster_lag_ms, ld.target_name, ld.target_lag_ms,"
                 " ld.corroborated_by_search, ov.source AS ov_source, ov.status AS ov_status,"
-                " ov.activity AS ov_activity, ov.note AS ov_note "
-                "FROM loot_drops ld LEFT JOIN loot_overrides ov ON ov.loot_drop_id = ld.id"
+                " ov.activity AS ov_activity, ov.note AS ov_note,"
+                " pub.published_at AS published_at "
+                "FROM loot_drops ld"
+                " LEFT JOIN loot_overrides ov ON ov.loot_drop_id = ld.id"
+                " LEFT JOIN loot_publications pub ON pub.loot_drop_id = ld.id"
                 " WHERE ld.id = ?",
                 (loot_drop_id,),
             ).fetchone()
@@ -330,6 +337,35 @@ def build_control_router(db_path: str, config_path: str | None = None) -> APIRou
             return {"ok": True}
         finally:
             conn.close()
+
+    # --- publish (local-only; pushes verified rows to a public server) ------
+
+    @router.post("/publish")
+    def publish_rows(payload: dict[str, Any]) -> dict[str, Any]:
+        from . import publish as publish_mod
+
+        ids = payload.get("ids")
+        if not isinstance(ids, list) or not ids or not all(isinstance(i, int) and i > 0 for i in ids):
+            raise HTTPException(status_code=422, detail="'ids' must be a non-empty list of positive integers")
+        cfg = _cfg()
+        if not cfg.publish.enabled or not cfg.publish.url or not cfg.publish.token:
+            raise HTTPException(status_code=403, detail="publishing is not configured ([publish] enabled/url/token)")
+        conn = db.connect(db_path)
+        db.migrate(conn)
+        try:
+            results = publish_mod.publish_rows(conn, cfg.publish.url, cfg.publish.token, ids)
+        finally:
+            conn.close()
+        created = sum(1 for r in results if r["status"] == "ok" and r["remote_action"] == "created")
+        replaced = sum(1 for r in results if r["status"] == "ok" and r["remote_action"] == "replaced")
+        failed = sum(1 for r in results if r["status"] != "ok")
+        return {
+            "published": len(results) - failed,
+            "created": created,
+            "replaced": replaced,
+            "failed": failed,
+            "results": results,
+        }
 
     # --- data management -----------------------------------------------------
 
@@ -476,30 +512,8 @@ def build_web_app(db_path: str, config_path: str | None = None, static_dir: Path
     _ensure_schema(db_path)
     static = static_dir or _STATIC_DIR
     if static.is_dir():
-        _mount_spa(app, static)
+        mount_spa(app, static)
     return app
-
-
-def _mount_spa(app: FastAPI, static_dir: Path) -> None:
-    """Serve the Vite build and fall back to ``index.html`` for client routes."""
-    index_html = (static_dir / "index.html").read_bytes()
-    assets = static_dir / "assets"
-    if assets.is_dir():
-        app.mount("/assets", StaticFiles(directory=str(assets)), name="assets")
-
-    @app.get("/{full_path:path}", include_in_schema=False)
-    def spa(full_path: str) -> Response:
-        if full_path.split("/")[0] == "api":
-            raise HTTPException(status_code=404, detail="unknown API route")
-        if full_path and (static_dir / full_path).is_file():
-            return Response((static_dir / full_path).read_bytes(), media_type=_guess_media(full_path))
-        return Response(index_html, media_type="text/html")
-
-
-def _guess_media(path: str) -> str:
-    import mimetypes
-
-    return mimetypes.guess_type(path)[0] or "application/octet-stream"
 
 
 def _ensure_schema(db_path: str) -> None:

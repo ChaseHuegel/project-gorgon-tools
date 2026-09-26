@@ -101,6 +101,8 @@ Agents working on this project must update this section. Mark items `[x]` only w
 - [ ] Consider a reorder-tolerance buffer in `Correlator` for out-of-order live events (currently correct for in-order ingestion).
 - [ ] Optional: `find-ports --write-config` to persist discovered ports back into `gorgon-tracker.toml`.
 - [ ] Run `gorgon-tracker sniff-inspect` during a scripted looting session (kill, loot-all, skin, butcher, bury, harvest) and inspect `strings.csv`/per-stream dumps for plaintext loot/status messages. If `added to inventory` (or similar) crosses the wire, extend `parsers/packets.py` with a loot decoder feeding ms-exact packet timing into the correlator; otherwise treat the packet path as closed and rely on chat timing + the audit/override layer.
+- [ ] Storage seam: run the public read/ingest surface against PostgreSQL (the SQL that feeds it is portable; `COLLATE NOCASE` / `ROUND(CAST(...AS REAL))` need dialect handling). Local capture stays SQLite-only.
+- [ ] Publish history: keep an append-only log of every publication attempt (currently one latest-state row per `loot_drop_id`).
 
 ### Correlation audit & hardening (evidence, harvestables, overrides)
 - [x] `CorrelateConfig`: `target_fallback_seconds = 3.0`, `search_corroboration_seconds = 2.0`
@@ -126,3 +128,12 @@ Agents working on this project must update this section. Mark items `[x]` only w
 - [x] Zone identification: `LOADING LEVEL Area<id>` mapped to the official friendly name in the Unity parser (`AreaSerbule2` -> "Serbule Hills"); zone-name corrector gains a short-name alias table from the catalog (`Anagoge` -> `Anagoge Island`)
 - [x] CLI `update-catalog` (+ web Import/Export "Update catalog" button, `GET/POST /api/catalog`); `[catalog] data_dir` config; item metadata (value/stack/keywords/version) surfaced in the Dashboard item drill-down
 - [x] Tests/docs: catalog load + seed + idempotency + clear-reseed, alias correction, playerlog area mapping, web catalog endpoints; README + sample `gorgon-tracker.toml` updated
+
+### Public deploy + publish (read-only server, local publish flow)
+- [x] `public.py`: read-only public app (read API + public SPA + optional bearer-token ingest `POST /api/ingest/loot`); control routes never mounted; unique publish-key/encounter indexes created only on the public DB; synthetic "published" session keeps the schema shared
+- [x] `serve` CLI now deploys the public surface (`--config`); `web` stays the local tool (read + control + publish)
+- [x] `publish.py` + migration v6 `loot_publications`: effective-row payloads (overrides applied, encounter identity included), batch push, per-row audit; `POST /api/publish` (local-only, requires `[publish]`); re-publish replaces on the natural key
+- [x] Frontend: shared `LootEvidence` components; Loot page Publish button + published badge; second Vite profile builds the read-only public UI (`static/public`)
+- [x] Config: `[publish]` (local client) and `[serve]` (public ingest gate) keys; sample `gorgon-tracker.toml` + docs updated
+- [x] Tests/docs: `tests/test_public.py`, `tests/test_publish.py`, `docs/specs/publish.md`; `docs/api.md`, `docs/architecture.md`, `docs/development.md`, README updated
+- [x] Exit criteria: public server serves only read data; local tool publishes checked rows; re-publish replaces; Python + Node gates green

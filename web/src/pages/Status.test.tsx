@@ -12,6 +12,7 @@ const fake = {
   open_session_counts: { loot: 10, sources: 4 },
   daemon: { pid: 4242, running: true, pidfile: "/tmp/x/gorgon-tracker.pid" },
   warnings: ["Chat tailing has no log directory."],
+  publish: { configured: false, url: "" },
 };
 
 describe("StatusPage", () => {

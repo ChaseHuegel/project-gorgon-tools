@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../api/client";
-import type { LootRow } from "../api/types";
+import type { LootRow, Status } from "../api/types";
 import Loot from "./Loot";
 
 function makeRow(overrides: Partial<LootRow> = {}): LootRow {
@@ -29,9 +29,24 @@ function makeRow(overrides: Partial<LootRow> = {}): LootRow {
 
 const orphaned = makeRow();
 
+function publishStatus(): Status {
+  return {
+    db_path: "/tmp/x.db",
+    config_path: "/tmp/x.toml",
+    config_db_path: "/tmp/x.db",
+    sessions_total: 0,
+    open_session_id: null,
+    open_session_counts: null,
+    daemon: { pid: null, running: false, pidfile: "" },
+    warnings: [],
+    publish: { configured: true, url: "https://loot.example.test" },
+  };
+}
+
 describe("LootPage", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.spyOn(api, "status").mockResolvedValue(publishStatus());
   });
 
   it("applies an override to the visible row without a reload", async () => {
@@ -112,5 +127,38 @@ describe("LootPage", () => {
     expect(del).not.toHaveBeenCalled();
     expect(screen.queryByText("Delete loot row?")).not.toBeInTheDocument();
     expect(screen.getByText("Bat Guano")).toBeInTheDocument();
+  });
+
+  it("publishes selected rows when publish is configured", async () => {
+    vi.spyOn(api, "loot").mockResolvedValue([orphaned]);
+    const publish = vi.spyOn(api, "publishLoot").mockResolvedValue({
+      published: 1,
+      created: 1,
+      replaced: 0,
+      failed: 0,
+      results: [{ loot_drop_id: 7, status: "ok", remote_action: "created", message: "created on remote" }],
+    });
+    render(<Loot />);
+
+    await screen.findByText("Bat Guano");
+    fireEvent.click(screen.getByLabelText("Select row 7"));
+    fireEvent.click(screen.getByRole("button", { name: "Publish selected (1)" }));
+
+    await waitFor(() => expect(publish).toHaveBeenCalledWith([7]));
+    expect(screen.getByText(/Published 1 row/)).toBeInTheDocument();
+  });
+
+  it("hides the publish button when publishing is not configured", async () => {
+    vi.spyOn(api, "status").mockResolvedValue({
+      ...publishStatus(),
+      publish: { configured: false, url: "" },
+    });
+    vi.spyOn(api, "loot").mockResolvedValue([orphaned]);
+    render(<Loot />);
+
+    await screen.findByText("Bat Guano");
+    fireEvent.click(screen.getByLabelText("Select row 7"));
+    const button = screen.getByRole("button", { name: /Publish selected/ }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
   });
 });

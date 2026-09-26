@@ -140,6 +140,12 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ids }),
     }),
+  publishLoot: (ids: number[]) =>
+    request<PublishResult>("/api/publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    }),
   clearData: () => request<{ ok: boolean; cleared: Record<string, number> }>("/api/data/clear", { method: "POST" }),
 
   distinct: () => request<DistinctValues>("/api/distinct"),
@@ -253,4 +259,16 @@ export interface Monitor {
   top: number;
   width: number;
   height: number;
+}
+export interface PublishResult {
+  published: number;
+  created: number;
+  replaced: number;
+  failed: number;
+  results: Array<{
+    loot_drop_id: number;
+    status: "ok" | "failed";
+    remote_action: "created" | "replaced" | null;
+    message: string;
+  }>;
 }

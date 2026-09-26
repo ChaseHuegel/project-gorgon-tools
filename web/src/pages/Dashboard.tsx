@@ -71,7 +71,7 @@ const TAB_LABEL: Record<Tab, string> = {
   matrix: "Rate matrix",
 };
 
-export default function DashboardPage() {
+export default function DashboardPage({ showExport = true }: { showExport?: boolean }) {
   const [params, setParams] = useSearchParams();
 
   const tab: Tab = (TABS as readonly string[]).includes(params.get("tab") ?? "")
@@ -168,19 +168,21 @@ export default function DashboardPage() {
     <Page
       title="Drop-rate dashboard"
       actions={
-        <a
-          href={exportAnalysisUrl({
-            source: source || undefined,
-            item: item || undefined,
-            zone: zone || undefined,
-            activity: activity || undefined,
-            status,
-            since: sinceMs ? new Date(sinceMs).toISOString() : undefined,
-          })}
-          style={linkBtnStyle}
-        >
-          Export analysis CSV
-        </a>
+        showExport ? (
+          <a
+            href={exportAnalysisUrl({
+              source: source || undefined,
+              item: item || undefined,
+              zone: zone || undefined,
+              activity: activity || undefined,
+              status,
+              since: sinceMs ? new Date(sinceMs).toISOString() : undefined,
+            })}
+            style={linkBtnStyle}
+          >
+            Export analysis CSV
+          </a>
+        ) : undefined
       }
     >
       <Tabs active={tab} onSelect={setTab} />

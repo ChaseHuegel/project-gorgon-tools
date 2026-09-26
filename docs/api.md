@@ -4,10 +4,10 @@ This spec describes the complete HTTP API served by `gorgon-tracker serve` and `
 
 Readiness notes:
 
-- `serve` mounts only the read router plus `GET /` index.
-- `web` mounts the read router (no index) plus control endpoints and the SPA.
-- Every request opens a fresh read-only SQLite connection and runs migrations (`src/gorgon_tracker/serve.py:229-254`).
-- All endpoints are unauthenticated and bind `127.0.0.1` by default. Destructive endpoints (`POST /api/data/clear`, `POST /api/loot/rows/delete`) are unauthenticated POSTs.
+- `serve` (public) mounts only the read router, the read-only public SPA, and — when configured — the write-only publish ingest. It exposes no control endpoints.
+- `web` (local tool) mounts the read router plus control endpoints, the publish action, and the full SPA.
+- Every request opens a fresh SQLite connection and runs migrations (`src/gorgon_tracker/serve.py:229-254`).
+- All endpoints are unauthenticated and bind `127.0.0.1` by default. Destructive endpoints (`POST /api/data/clear`, `POST /api/loot/rows/delete`) are unauthenticated POSTs, so `web` must never be bound beyond localhost. The public ingest endpoint (`POST /api/ingest/loot`) is the only externally writable route and is bearer-token protected.
 
 ## Read endpoints
 
@@ -35,15 +35,18 @@ Builder: `build_read_router` at `src/gorgon_tracker/serve.py:257-681`.
 
 ### Effective loot row shape
 
-`GET /api/loot` and `PUT /api/loot/{id}` return the override-merged row (`serve.py:48-58`):
+`GET /api/loot` and `PUT /api/loot/{id}` return the override-merged row (`serve.py:48-64`):
 
 ```json
 {id, captured_at, source, activity, item, amount, zone, status, lag_ms,
  linked_via, monster_name, monster_lag_ms, target_name, target_lag_ms,
- corroborated_by_search, note, overridden}
+ corroborated_by_search, note, overridden, published, published_at}
 ```
 
-`note` and `overridden` exist only here. The SSE loot stream sends the raw row (no `note`/`overridden`; extra source fields; see below).
+`note`, `overridden`, `published`, and `published_at` exist only here. `published`
+is true when a `loot_publications` audit row exists for the drop. The SSE loot
+stream sends the raw row (no override/publication fields; extra source fields;
+see below).
 
 ### Item metadata
 
@@ -55,7 +58,7 @@ Builder: `build_control_router` at `src/gorgon_tracker/web.py:53-467`.
 
 | Method | Path | Purpose | Body / query | Response |
 |---|---|---|---|---|
-| GET | `/api/status` | UI status | — | `{db_path, config_path, config_db_path, sessions_total, open_session_id, open_session_counts, daemon, warnings}` |
+| GET | `/api/status` | UI status | — | `{db_path, config_path, config_db_path, sessions_total, open_session_id, open_session_counts, daemon, warnings, publish}` where `publish` is `{configured, url}` (token never exposed) |
 | GET | `/api/chat/tail` | Tail the newest chat log | `limit` (default 500, cap 5000) | `{found, log_dir, file, mtime_ms, start_offset, reason, lines:[{text, kind}]}` where `kind` is `loot`, `bury`, or null |
 | GET | `/api/config` | Effective config + path | — | `{path, config}` |
 | PUT | `/api/config` | Partial config write | `{updates: {"section.key": value}}` (non-empty); `422` on pydantic error | `{path, config}` |
@@ -70,6 +73,7 @@ Builder: `build_control_router` at `src/gorgon_tracker/web.py:53-467`.
 | DELETE | `/api/loot/{id}` | Remove override | — | `{ok: true}` |
 | POST | `/api/loot/rows/delete` | Hard-delete loot rows | `{ids: [positive ints]}` | `{deleted}` |
 | POST | `/api/data/clear` | Wipe all captured data | — | `{ok: true, cleared: {table: count}}` |
+| POST | `/api/publish` | Publish selected loot rows to the configured public server | `{ids: [positive ints]}`; `403` unless `[publish]` url/token configured | `{published, created, replaced, failed, results:[{loot_drop_id, status, remote_action, message}]}` |
 | GET | `/api/names` | Name-list snapshot info | — | `{enabled, data_dir, zones_count, monsters_count, zones_path, monsters_path, zones_source, monsters_source, zones_mtime_ms, monsters_mtime_ms}` |
 | POST | `/api/names/update` | Fetch name lists from the wiki | — | `{zones, monsters, path}`; `502` on fetch failure |
 | GET | `/api/catalog` | Catalog snapshot info | — | `{data_dir, item_source, area_source, item_count, area_count, version}` |
@@ -111,6 +115,16 @@ Written by `src/gorgon_tracker/ingest.py`:
 
 Raw event dedup: loot events carry a `dedup_hash = sha1(source_class|item|amount|whole_second)` so the chat and Unity reports of one pickup share a hash (`ingest.py:25-34`).
 
+## Publish ingest (write-only, public server)
+
+Mounted by `gorgon-tracker serve` only when `[serve] ingest_enabled=true` and `[serve] ingest_token` is set. This is the single write route on the public server; everything else is read-only. Payload contract: `docs/specs/publish.md`.
+
+| Method | Path | Purpose | Auth | Response |
+|---|---|---|---|---|
+| POST | `/api/ingest/loot` | Receive verified loot rows | `Authorization: Bearer <ingest_token>` | `{received, created, replaced, actions:[...]}` |
+
+Upsert on the natural key `(captured_at, source, item, amount)`: exact-match rows are replaced, others inserted. Rows attach to a stable synthetic "published" session; `encounter_uuid` (optional) reconstructs `encounters` so public drop rates keep working. `401` without the token; `422` on invalid fields. See `src/gorgon_tracker/public.py`.
+
 ## Pagination and filter conventions
 
 - `limit`/`offset` exist only on `drop-rates` (`limit` clamped 1..5000, `offset` ≥ 0). Other lists are limit-only; the client pages.
@@ -121,14 +135,19 @@ Raw event dedup: loot events carry a `dedup_hash = sha1(source_class|item|amount
 
 ## SPA serving
 
-`_mount_spa` (`web.py:483-496`): `/assets` is a static mount; any other path serves an existing static file (MIME-guessed) or the preloaded `index.html` for client routing. An unknown `/api/*` path returns `404`, not the SPA shell. The Vite build output lives in `src/gorgon_tracker/static/` (gitignored).
+Two bundled SPAs, served with the same fallback helper (`src/gorgon_tracker/spa.py`):
+
+- `web` mounts `static/app/` (full local UI: Status, Dashboard, Loot, Sessions, Config, Calibrate, Import/Export).
+- `serve` mounts `static/public/` (read-only public UI: Dashboard, Loot, Sessions, About).
+
+`/assets` is a static mount; any other path serves an existing static file (MIME-guessed) or the preloaded `index.html` for client routing. An unknown `/api/*` path returns `404`, not the SPA shell. The Vite build output lives in `src/gorgon_tracker/static/` (gitignored).
 
 ## Known type drift (frontend vs backend)
 
 Recorded so agents do not re-discover it (`web/src/api/types.ts`):
 
-- The TS `Config` type omits the `playerlog`, `names`, `catalog` sections and `correlate.activity_window_seconds` from the wire shape.
-- The SSE `loot` payload has extra fields (`instance_id`, `entity_id`, `item_code_id`, `item_display`, `missed`, `killer_json`) and lacks `note`/`overridden`; pages tolerate the difference.
+- The TS `Config` type omits the `playerlog`, `names`, `catalog`, `publish`, `serve` sections and `correlate.activity_window_seconds` from the wire shape.
+- The SSE `loot` payload has extra fields (`instance_id`, `entity_id`, `item_code_id`, `item_display`, `missed`, `killer_json`) and lacks `note`/`overridden`/`published`/`published_at`; pages tolerate the difference.
 - `SourceAgg` omits `last_seen`; `ReplayResult` is a partial view of an additive response.
 - `open_session_counts` keys are table names (`raw_events`, `sources`, `loot`, `burials`, `target_sightings`, `zone_changes`, `encounters`, `loot_drops`, `corpse_searches`).
 
@@ -136,8 +155,9 @@ Recorded so agents do not re-discover it (`web/src/api/types.ts`):
 
 - Read router: `src/gorgon_tracker/serve.py`
 - Control router + SPA: `src/gorgon_tracker/web.py`
+- Public app + ingest: `src/gorgon_tracker/public.py`
 - SSE: `src/gorgon_tracker/stream.py`
 - Config write-back: `src/gorgon_tracker/config_write.py`
-- Tests: `tests/test_serve.py`, `tests/test_web.py`, `tests/test_web_ops.py`
+- Tests: `tests/test_serve.py`, `tests/test_web.py`, `tests/test_web_ops.py`, `tests/test_public.py`, `tests/test_publish.py`
 
 Update this doc when any route, query param, response field, or SSE payload changes.

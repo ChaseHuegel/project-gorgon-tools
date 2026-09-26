@@ -13,9 +13,12 @@ sources (producer threads)              pipeline thread (single SQLite writer)
    playerlog (Player.log tail) ────┼─► queue(10000) ─► parser ─► Correlator ─► DbWriter
    ocr zone (tesseract)        ────┤                                          │
    ocr target (tesseract)      ─┘                                          SQLite (WAL)
-                                                                               │
+                                                                                │
 read side:  serve / web (FastAPI) ─ blend read API + SSE over the same DB ─────┘
+            web   = read API + control API + full SPA on the local DB
+            serve = read API + public SPA + optional token ingest (public DB)
 offline:    replay / migrate feed the same parser + correlator into the DB
+publish:    web  ──effective rows──► serve /api/ingest/loot ──► public DB
 ```
 
 Every event keeps `time_ms` in UTC epoch milliseconds; SQLite stores the same (`src/gorgon_tracker/schema.sql:2`).
@@ -23,7 +26,8 @@ Every event keeps `time_ms` in UTC epoch milliseconds; SQLite stores the same (`
 ## Process model
 
 - **Capture daemon** (`gorgon-tracker run`): the only writer. Runs the pipeline; owns the SQLite connection on its own thread. Started with `run --daemon` (double-fork + `setsid`, `daemon.py:34-52`) or from the web UI. One instance per DB, tracked by a pidfile at `<db parent>/gorgon-tracker.pid`.
-- **Web server** (`gorgon-tracker web`) and **serve** (`gorgon-tracker serve`): read from the same DB in WAL mode. The web process does config writes, replay, migrate, export, port discovery, and calibration inline; it never runs the capture pipeline.
+- **Web server** (`gorgon-tracker web`): the local tool. Full read API + control API + full SPA over the local DB. Does config writes, replay, migrate, export, calibration, overrides, delete, and publish inline; it never runs the capture pipeline.
+- **Public server** (`gorgon-tracker serve`): the deployable, read-only public surface. Mounts only the read API, the public SPA, and (when `[serve]` configures it) the token-protected publish ingest. It can point at any gorgon-tracker database — typically a *public* database that receives published rows. No control endpoint is ever mounted here.
 - **Offline commands** (`replay`, `migrate`): open their own session and feed the same parsers + correlator, then close the session as retrospective.
 
 Single-writer rule: only the pipeline thread touches the SQLite connection during capture. Everything else opens short-lived read connections (`serve.py:229-254`).
@@ -87,22 +91,27 @@ All modules in `src/gorgon_tracker/`.
 | Module | Role | Spec |
 |---|---|---|
 | `serve.py` | Read-only FastAPI router (shared by `serve` and `web`); index banner. | `docs/api.md` |
-| `web.py` | Control endpoints + SPA serving; full UI app. | `docs/api.md` |
+| `web.py` | Control endpoints + SPA serving; full local UI app. | `docs/api.md` |
+| `public.py` | Public read-only app: read router + public SPA + optional token ingest (`POST /api/ingest/loot`). | `docs/api.md`, `docs/specs/publish.md` |
+| `publish.py` | Local publish client: effective-row payloads, remote push, `loot_publications` audit. | `docs/specs/publish.md` |
+| `spa.py` | Shared Vite SPA mount (history fallback, `/api` 404) used by `web` and `public`. | `docs/api.md` |
 | `stream.py` | SSE generators over the DB. | `docs/api.md` |
 
 ## Database
 
 - Connection: WAL, `synchronous=NORMAL`, `foreign_keys=ON`, `busy_timeout=5000` (`db.py:114-123`).
 - Migrations: `schema_migrations` table + `PRAGMA user_version`; each migration is `executescript` then a recorded version bump (`db.py:126-143`).
-- Migration history (`MIGRATIONS`, `db.py:93-99`):
+- Migration history (`MIGRATIONS`, `db.py:93-108`):
   - v1 `schema.sql`: baseline tables + views.
   - v2: `loot_drops` evidence columns (`linked_via`, `monster_*`, `target_*`, `corroborated_by_search`); `loot_overrides` (manual corrections).
   - v3: Unity provenance (`instance_id`, `entity_id`, `item_code_id`, `item_display`, `missed`, `killer_json`); `corpse_searches`; `items` (learned names).
   - v4: catalog metadata on `items` (`item_value`, `max_stack`, `keywords_json`, `icon_id`, `data_version`).
   - v5: `corpse_searches.extractions_json` (corpse-description audit).
-- Tables: `sessions`, `raw_events`, `sources`, `loot`, `burials`, `target_sightings`, `zone_changes`, `encounters`, `loot_drops`, `loot_overrides`, `corpse_searches`, `items`, `schema_migrations`.
+  - v6: `loot_publications` (publish audit: one row per `loot_drop_id`, exact payload sent).
+- Tables: `sessions`, `raw_events`, `sources`, `loot`, `burials`, `target_sightings`, `zone_changes`, `encounters`, `loot_drops`, `loot_overrides`, `corpse_searches`, `items`, `loot_publications`, `schema_migrations`.
 - Views: `v_sessions`, `v_summary`, `v_drop_rates` (see `docs/specs/correlation.md` for rates semantics).
 - `items` is preseeded from the catalog when empty (`seed_from_catalog`); canonical names never overwrite learned ones.
+- **Public database** (`serve`): same schema, plus two indexes created only on the public DB (`public.py:ensure_published_schema`): `idx_loot_drops_publish_key(captured_at, source, item, amount)` (natural-key upsert) and `idx_encounters_publish_uuid` (encounter reconstruction). Published rows attach to one synthetic `sessions.uuid = 'published'` row so all read queries and SSE streams work unchanged.
 
 ## CLI commands
 
@@ -121,28 +130,36 @@ Mapper: each `@app.command()` in `src/gorgon_tracker/cli.py` is a `gorgon-tracke
 | `update-names` | Fetch name lists from the wiki. |
 | `update-catalog` | Fetch item/zone catalogs from the CDN; re-seed the DB. |
 | `export` | Legacy-compatible CSV export. |
-| `serve` | Read-only API server. |
-| `web` | Full UI (read + control API + SPA). |
+| `serve` | Public deploy target: read-only API + public SPA + optional token ingest. |
+| `web` | Local tool: full UI (read + control API + SPA + publish). |
 | `config` | Print effective config as JSON. |
 | `version` | Print package version. |
 
 ## Frontend structure
 
-`web/` is a Vite + React + TypeScript SPA. Key files (`web/src/`):
+`web/` is a Vite + React + TypeScript SPA with **two build profiles** sharing one source tree (`web/src/`):
+
+- Local profile (default `vite.config.ts`) → `src/gorgon_tracker/static/app/`: Status, Dashboard, Loot, Sessions, Config, Calibrate, Import/Export.
+- Public profile (`vite.public.config.ts`) → `src/gorgon_tracker/static/public/`: high-level nav + read-only pages only.
+
+Key files (`web/src/`):
 
 | Path | Role |
 |---|---|
-| `App.tsx`, `main.tsx` | Router shell (sidebar layout). |
+| `App.tsx`, `main.tsx` | Local router shell (sidebar layout). |
+| `App.public.tsx`, `main.public.tsx`, `index.public.html` (web root) | Public router shell + entry; read-only pages only. |
 | `api/client.ts`, `api/types.ts` | Typed fetch wrapper + backend JSON types. |
 | `hooks/useApi.ts`, `hooks/useSse.ts` | Data fetch (debounced, filterable) and SSE subscription. |
 | `pages/Status.tsx` | Daemon toggle, live counters, chat tail, warnings. |
-| `pages/Dashboard.tsx` | Overview / Rates / Find / Matrix tabs (Recharts). |
-| `pages/Loot.tsx` | Correlated-drop table with filters, overrides, SSE live rows. |
-| `pages/Sessions.tsx` | Session list + counts. |
+| `pages/Dashboard.tsx` | Overview / Rates / Find / Matrix tabs + all four drill-downs (`showExport` prop hides the CSV link on public). |
+| `pages/Loot.tsx` | Correlated-drop table with filters, overrides, SSE live rows, published badge + Publish action (local only). |
+| `pages/LootPublic.tsx` | Read-only loot table with filters (public). |
+| `pages/Sessions.tsx` | Session list + counts (shared). |
+| `pages/About.tsx` | Public data description (public). |
 | `pages/Config.tsx` | Sectioned config forms via dotted-key diff. |
 | `pages/Calibrate.tsx` | Snapshot, drag region, OCR preview, save. |
 | `pages/ImportExport.tsx` | Replay/migrate upload, find-ports, export, catalog/names update. |
-| `components/` | `DataTable`, `StatusBadge`, `FormField`, `FilePicker`, `RegionPicker`, `ConfirmDialog`, `Page`. |
+| `components/` | `DataTable`, `StatusBadge`, `FormField`, `FilePicker`, `RegionPicker`, `ConfirmDialog`, `Page`, `LootEvidence`. |
 
 The Vite build outputs to `src/gorgon_tracker/static/` (shipped in the pip package). Dev uses a Vite proxy to `http://127.0.0.1:8000` (or `BACKEND=`).
 

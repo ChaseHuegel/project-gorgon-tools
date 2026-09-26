@@ -49,8 +49,10 @@ gorgon_tracker = [
     "data/items.json",
     "data/areas.json",
     "data/version.txt",
-    "static/index.html",
-    "static/assets/*",
+    "static/app/index.html",
+    "static/app/assets/*",
+    "static/public/index.html",
+    "static/public/assets/*",
 ]
 
 [tool.pytest.ini_options]

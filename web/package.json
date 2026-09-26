@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "npm run build:local && npm run build:public",
+    "build:local": "vite build",
+    "build:public": "vite build --config vite.public.config.ts && node scripts/postbuild-public.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"

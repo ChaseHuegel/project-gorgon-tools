@@ -21,7 +21,9 @@ export default defineConfig({
   },
   build: {
     // Ship the bundle inside the Python package so FastAPI serves it at runtime.
-    outDir: "../src/gorgon_tracker/static",
+    // The local UI lives at static/app; the public read-only UI at static/public
+    // (built by vite.public.config.ts).
+    outDir: "../src/gorgon_tracker/static/app",
     emptyOutDir: true,
   },
   test: {

@@ -17,6 +17,7 @@ This index maps subjects to their docs. It is the recommended first read for age
 | Game CDN + wiki data formats | [`docs/specs/cdn-catalog.md`](specs/cdn-catalog.md) |
 | CSV and import formats | [`docs/specs/csv-formats.md`](specs/csv-formats.md) |
 | OCR capture pipeline | [`docs/specs/ocr.md`](specs/ocr.md) |
+| Publish + public ingest contract | [`docs/specs/publish.md`](specs/publish.md) |
 | Historical plan + development tracker (CLI/core) | [`docs/MIGRATION_PLAN.md`](MIGRATION_PLAN.md) |
 | Historical plan + development tracker (web UI) | [`docs/FRONTEND-PLAN.md`](FRONTEND-PLAN.md) |
 

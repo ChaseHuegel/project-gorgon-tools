@@ -48,5 +48,15 @@
 
 # [catalog]
 # data_dir = ""   # pin item/zone catalog snapshots to a directory (defaults to user data dir)
+
+# [publish]                   # local tool: push verified loot rows to a public server
+# enabled = false             # show the Publish action in the local Loot page
+# url = ""                    # public server base URL, e.g. "https://loot.example.com"
+# token = ""                  # bearer token for that server (must match its [serve] ingest_token)
+
+# [serve]                     # public server: read-only API + public UI + optional ingest
+# ingest_enabled = false      # allow POST /api/ingest/loot (write-only publish surface)
+# ingest_token = ""           # token required by the ingest endpoint (required when enabled)
+
 [ocr.zones]
 region = [1680, 31, 180, 20]

@@ -123,3 +123,10 @@ Agents working on this project must update this section. Mark items `[x]` only w
 - [x] Rate-first charts, KPI stat cards, confidence badges (sample-size-aware), clickable cell drill-downs (`[fe]`)
 - [x] Type-ahead search with keyboard nav, drill-down cross-links (source/item/zone/activity), rate matrix heatmap, `DataTable` pagination (`[fe]`)
 - [x] Exit criteria: `pytest`, `vitest`, `tsc`, `ruff`, `mypy` green; SPA smoke-tested against a populated DB (`[be][fe]`)
+
+### Phase 8 — Public read-only UI + publish
+- [x] Public app (`gorgon-tracker serve`): read-only API + public SPA + optional token ingest; `tests/test_public.py` asserts no control route leaks (`[be]`)
+- [x] Frontend split: second build profile (`vite.public.config.ts` → `static/public`); public pages Dashboard (`showExport=false`), `LootPublic`, Sessions, About; shared `LootEvidence` components (`[fe]`)
+- [x] Publish flow: `loot_publications` audit (migration v6), `[publish]` config, `POST /api/publish`, effective-row push, natural-key replace on re-publish, published badge + Publish button on the Loot page (`[be][fe]`)
+- [x] Tests/docs: `tests/test_public.py` + `tests/test_publish.py`, `LootPublic`/publish vitest, `docs/specs/publish.md`, README + sample config (`[be][fe][doc]`)
+- [x] Exit criteria: local capture → check rows → publish → public read-only UI shows them; re-publish replaces; full Python + Node gates green (`[be][fe]`)

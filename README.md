@@ -63,8 +63,8 @@ gorgon-tracker run                    # capture in the foreground; Ctrl-C to sto
 gorgon-tracker run --daemon           # background; stop with `gorgon-tracker stop`
 gorgon-tracker sniff-inspect          # capture game traffic and inventory plaintext strings
 gorgon-tracker status                 # sessions + per-source event counts
-gorgon-tracker serve                  # read-only API at http://127.0.0.1:8000
-gorgon-tracker web                    # full browser UI at http://127.0.0.1:8000
+gorgon-tracker serve                  # public read-only API + public UI at http://127.0.0.1:8000
+gorgon-tracker web                    # local tool UI: full read + control APIs at http://127.0.0.1:8000
 ```
 
 ### Web UI
@@ -78,13 +78,54 @@ capture daemon, and lets you browse loot data — no terminal needed for everyda
   paginated rates/summary view, a search-first item finder with drill-downs into sources/items/zones/activities,
   and a monster × item rate matrix heatmap. Filters and the active tab live in the URL (shareable), results
   export to CSV (via Recharts).
-- **Loot** — filter a stream of correlated drops; export to the legacy CSV.
+- **Loot** — filter a stream of correlated drops; export to the legacy CSV; check rows and
+  **Publish** the verified ones to a configured public server (see below); published rows get a badge.
 - **Sessions** — browse capture sessions and their timing.
 - **Config** — edit `gorgon-tracker.toml` from forms (only changed keys are written,
   so comments and formatting survive).
 - **Calibrate** — drag a region on a live snapshot to tune OCR zones/targets.
 - **Import / Export** — find ports, and replay/migrate historical captures by file
   upload or server path.
+
+### Public deployment
+
+`gorgon-tracker serve` is the deployable public surface: it serves **only** the read-only
+API, SSE, and a dedicated read-only web UI (`Dashboard`, `Loot`, `Sessions`, `About`).
+No config, daemon, calibration, or edit/delete endpoints are ever mounted. Point it at a
+public database and run it behind a reverse proxy handling TLS:
+
+```sh
+gorgon-tracker serve --host 0.0.0.0 --port 80 --config public.toml
+```
+
+`public.toml`:
+
+```toml
+[db]
+path = "/srv/loot/public.db"
+
+[serve]
+ingest_enabled = true
+ingest_token = "files-the-stars"
+```
+
+### Publishing verified loot
+
+The local tool captures and audits in its own SQLite database. To expose data publicly:
+review and fix rows in the local **Loot** page, check the rows you trust, then click
+**Publish selected**. That pushes the exact row copies to the public server's write-only
+ingest endpoint and records the outcome locally. Configure the local `[publish]` section
+(the token must match the server's `[serve] ingest_token`):
+
+```toml
+[publish]
+enabled = true
+url = "https://loot.example.com"
+token = "files-the-stars"
+```
+
+Re-publishing a corrected row replaces the public copy (match on the row's natural key).
+The payload format and server contract live in `docs/specs/publish.md`.
 
 The UI is a Vite/React bundle that ships inside the pip package, so nothing extra is
 needed at runtime (`--host --port --config --db` and OCR/capture prerequisites apply
@@ -225,5 +266,7 @@ npm install
 npm run dev        # Vite dev server, proxies /api to a running `gorgon-tracker web/serve` (or `BACKEND=` to point elsewhere)
 npm run typecheck  # tsc --noEmit
 npm run test       # vitest
-npm run build      # bundles into ../src/gorgon_tracker/static, served by FastAPI
+npm run build      # bundles BOTH profiles into ../src/gorgon_tracker/static (app/ = local UI, public/ = read-only UI)
+npm run build:local   # local UI only (static/app)
+npm run build:public  # read-only UI only (static/public)
 ```

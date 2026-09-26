@@ -90,12 +90,30 @@ _MIGRATION_V5_SQL = """
 ALTER TABLE corpse_searches ADD COLUMN extractions_json TEXT NOT NULL DEFAULT '{}';
 """
 
+# v6: publish audit trail. Records the exact effective (override-merged) copy of
+# a loot row that was pushed to a public server, when, and the remote outcome.
+# One row per loot drop (latest state); append-only history is a follow-up.
+_MIGRATION_V6_SQL = """
+CREATE TABLE IF NOT EXISTS loot_publications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    loot_drop_id INTEGER NOT NULL UNIQUE REFERENCES loot_drops(id),
+    published_at INTEGER NOT NULL,
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    remote_batch TEXT,
+    status TEXT NOT NULL DEFAULT 'ok',
+    message TEXT,
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_loot_publications_published_at ON loot_publications(published_at);
+"""
+
 MIGRATIONS: list[tuple[int, str]] = [
     (1, _SCHEMA_SQL),
     (2, _MIGRATION_V2_SQL),
     (3, _MIGRATION_V3_SQL),
     (4, _MIGRATION_V4_SQL),
     (5, _MIGRATION_V5_SQL),
+    (6, _MIGRATION_V6_SQL),
 ]
 
 COUNT_TABLES = (

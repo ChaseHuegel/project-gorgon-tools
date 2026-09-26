@@ -32,8 +32,12 @@ npm install
 npm run dev         # Vite dev server; proxies /api to 127.0.0.1:8000 (or BACKEND=)
 npm run typecheck   # tsc --noEmit
 npm test            # vitest
-npm run build       # bundles into ../src/gorgon_tracker/static, served by FastAPI
+npm run build       # builds BOTH profiles into ../src/gorgon_tracker/static (app/ + public/)
 ```
+
+Two build profiles share `web/src/`: `vite build` (local UI → `static/app/`) and
+`vite build --config vite.public.config.ts` (public read-only UI → `static/public/`, then a
+post-build rename to `index.html`). CI runs both.
 
 ## Testing conventions
 
@@ -83,6 +87,11 @@ Canonical source: `src/gorgon_tracker/config.py` (pydantic models). The sample f
 | `[names.zones]` / `[names.monsters]` | `ratio` | `90.0` | Fuzzy threshold (percent) |
 | `[names.zones]` / `[names.monsters]` | `partial_ratio` | `85.0` | Partial threshold (percent) |
 | `[catalog]` | `data_dir` | `""` | Pin catalog snapshots dir |
+| `[publish]` | `enabled` | `false` | Enable the Loot-page Publish action |
+| `[publish]` | `url` | `""` | Public server base URL (e.g. `https://loot.example.com`) |
+| `[publish]` | `token` | `""` | Bearer token for the public server's ingest endpoint (`[serve] ingest_token` on the public box) |
+| `[serve]` | `ingest_enabled` | `false` | Allow `POST /api/ingest/loot` on the public server |
+| `[serve]` | `ingest_token` | `""` | Bearer token required by the ingest endpoint; must be set when `ingest_enabled=true` |
 
 Config file discovery: explicit path or `$GORGON_TRACKER_CONFIG`, then `gorgon-tracker.toml` in the working dir, then `~/.config/gorgon-tracker/config.toml` (`config.py:135`, `:265-285`). `db.path` is absolutized on load; empty `chat.log_dir`/`playerlog.path` auto-fill from Steam/Proton discovery (`config.py:251-262`).
 
