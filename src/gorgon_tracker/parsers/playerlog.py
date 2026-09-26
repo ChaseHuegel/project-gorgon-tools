@@ -64,6 +64,20 @@ BURY_MSG = "You bury the corpse."
 COINS_RE = re.compile(r"You searched the corpse and found (?P<n>\d+) coins?\.?$")
 LOADING_LEVEL_RE = re.compile(r"LOADING LEVEL (?P<area>Area[\w ']+)$")
 
+_area_names_cache: dict[str, str] | None = None
+
+
+def _area_name_map() -> dict[str, str]:
+    """Internal area id -> friendly name from the bundled zone catalog (memoized)."""
+    global _area_names_cache
+    if _area_names_cache is None:
+        from .. import catalog as catalog_mod
+
+        _area_names_cache = {
+            area_id: zone.name for area_id, zone in catalog_mod.zone_catalog().by_id.items()
+        }
+    return _area_names_cache
+
 
 @dataclass
 class _Window:
@@ -81,12 +95,17 @@ class PlayerLogParser:
     the UTC anchor date, corpse-interaction window, and pending removals are
     tracked across ``feed`` calls so live tailing and offline replay behave
     identically.
+
+    ``area_names`` (internal area id -> friendly name) defaults to the bundled
+    zone catalog so ``LOADING LEVEL AreaSerbule2`` is reported as its
+    player-visible name (``Serbule Hills``) rather than a raw id.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, area_names: dict[str, str] | None = None) -> None:
         self._anchor: datetime | None = None
         self._last_epoch_ms: int | None = None
         self._window: _Window | None = None
+        self._area_names = area_names
 
     # -- clock ---------------------------------------------------------------
 
@@ -129,10 +148,17 @@ class PlayerLogParser:
             return []
         if "LocalPlayer" not in line:
             if area := LOADING_LEVEL_RE.search(line):
-                zone_name = area["area"].removeprefix("Area").strip() or area["area"]
-                return [ZoneChange(time_ms=time_ms, zone=zone_name)]
+                return [ZoneChange(time_ms=time_ms, zone=self._zone_name(area["area"]))]
             return []
         return self._process_local(line, time_ms)
+
+    def _zone_name(self, area: str) -> str:
+        """Map a ``LOADING LEVEL`` area id to its friendly name, else strip ``Area``."""
+        area = area.strip()
+        names = self._area_names
+        if names is None:
+            names = _area_name_map()
+        return names.get(area) or (area.removeprefix("Area").strip() or area)
 
     def _process_local(self, line: str, time_ms: int) -> list[object]:
         if add := ADD_ITEM_RE.search(line):

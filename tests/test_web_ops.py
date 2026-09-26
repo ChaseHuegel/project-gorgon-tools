@@ -239,7 +239,7 @@ def test_clear_data_wipes_all(tmp_path: Path) -> None:
 
     for table in ("sessions", "raw_events", "sources", "loot", "loot_drops", "loot_overrides", "items"):
         assert conn.execute(f"SELECT COUNT(*) c FROM {table}").fetchone()["c"] == 0
-    assert conn.execute("SELECT COUNT(*) c FROM schema_migrations").fetchone()["c"] == 3
+    assert conn.execute("SELECT COUNT(*) c FROM schema_migrations").fetchone()["c"] == len(db.MIGRATIONS)
     conn.close()
 
 
@@ -380,3 +380,54 @@ def test_names_update_surfaces_fetch_failure(tmp_path: Path, monkeypatch) -> Non
     resp = _client(tmp_path).post("/api/names/update")
     assert resp.status_code == 502
     assert "wiki name fetch failed" in resp.json()["detail"]
+
+
+
+# --- item/zone catalog -------------------------------------------------------
+
+
+def _catalog_config(tmp_path: Path) -> Path:
+    config = tmp_path / "gorgon-tracker.toml"
+    config.write_text(f"[db]\npath = 'data/gorgon.db'\n\n[catalog]\ndata_dir = '{tmp_path}' \n")
+    return config
+
+
+def test_catalog_status_reports_bundled_snapshot(tmp_path: Path) -> None:
+    resp = _client(tmp_path).get("/api/catalog")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["item_source"] == "bundled"
+    assert body["area_source"] == "bundled"
+    assert body["item_count"] == 11048
+    assert body["area_count"] == 37
+    assert body["version"] == "486"
+
+
+def test_catalog_update_fetches_and_reseeds(tmp_path: Path, monkeypatch) -> None:
+    client = _client(tmp_path, _catalog_config(tmp_path))
+    fake_items = {
+        "item_x": {"InternalName": "ArmorPatchKit3", "Name": "Good Armor Patch Kit", "Value": 5}
+    }
+    fake_areas = {
+        "AreaSerbule2": {"FriendlyName": "Serbule Hills", "ShortFriendlyName": "Serbule Hills"}
+    }
+
+    def fake_versions(filename: str, fetch=None):
+        return fake_items if filename == "items.json" else fake_areas
+
+    monkeypatch.setattr("gorgon_tracker.catalog.current_data_version", lambda fetch=None: "777")
+    monkeypatch.setattr("gorgon_tracker.catalog._fetch_versions", fake_versions)
+
+    resp = client.post("/api/catalog/update")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["version"] == "777"
+    assert body["items"] == 1
+    assert body["areas"] == 1
+    assert body["seeded"] >= 1
+
+    row = db.connect(tmp_path / "data/gorgon.db").execute(
+        "SELECT display_name, data_version FROM items WHERE base_name='ArmorPatchKit' AND item_code='3'"
+    ).fetchone()
+    assert row["display_name"] == "Good Armor Patch Kit"
+    assert row["data_version"] == "777"

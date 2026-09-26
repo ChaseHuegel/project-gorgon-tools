@@ -97,6 +97,16 @@ class NamesConfig(BaseModel):
     monsters: NamesKindConfig = Field(default_factory=NamesKindConfig)
 
 
+class CatalogConfig(BaseModel):
+    """Canonical item/zone catalog snapshots from the official game data CDN.
+
+    Bundled snapshots ship with the package; a per-user snapshot can pin a
+    specific game data version when ``data_dir`` is set (see ``update-catalog``).
+    """
+
+    data_dir: str = ""
+
+
 class TrackerConfig(BaseModel):
     db: DbConfig = Field(default_factory=DbConfig)
     capture: CaptureConfig = Field(default_factory=CaptureConfig)
@@ -105,6 +115,7 @@ class TrackerConfig(BaseModel):
     ocr: OcrConfig = Field(default_factory=OcrConfig)
     correlate: CorrelateConfig = Field(default_factory=CorrelateConfig)
     names: NamesConfig = Field(default_factory=NamesConfig)
+    catalog: CatalogConfig = Field(default_factory=CatalogConfig)
 
 
 _PROTON_CHAT_SUFFIX = (

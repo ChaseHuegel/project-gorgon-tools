@@ -1,5 +1,7 @@
 import type {
   ActivityDetail,
+  CatalogInfo,
+  CatalogUpdateResult,
   ChatTail,
   ConfigResponse,
   DaemonInfo,
@@ -183,6 +185,9 @@ export const api = {
 
   names: () => request<NamesInfo>("/api/names"),
   updateNames: () => request<NamesUpdateResult>("/api/names/update", { method: "POST" }),
+
+  catalog: () => request<CatalogInfo>("/api/catalog"),
+  updateCatalog: () => request<CatalogUpdateResult>("/api/catalog/update", { method: "POST" }),
 
   discoverPorts: (writeConfig = false) =>
     request<PortsDiscover>("/api/ports/discover", {

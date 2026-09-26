@@ -21,6 +21,7 @@ web/dist/
 data/
 !src/gorgon_tracker/data/
 !src/gorgon_tracker/data/*.txt
+!src/gorgon_tracker/data/*.json
 *.db
 *.db-wal
 *.db-shm

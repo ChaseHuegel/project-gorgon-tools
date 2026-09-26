@@ -131,6 +131,7 @@ def run_pipeline(
     """
     conn = db.connect(cfg.db.path)
     db.migrate(conn)
+    db.seed_from_catalog(conn)
     try:
         session_id = db.open_or_new_session(conn, platform, cfg.model_dump())
         if on_session is not None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
+from collections.abc import Iterable
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
@@ -69,7 +70,24 @@ CREATE TABLE IF NOT EXISTS items (
 );
 """
 
-MIGRATIONS: list[tuple[int, str]] = [(1, _SCHEMA_SQL), (2, _MIGRATION_V2_SQL), (3, _MIGRATION_V3_SQL)]
+# v4: authoritative catalog preseed columns on `items`. Canonical rows are
+# seeded from the bundled catalog snapshot (see `seed_items`), so every item the
+# Unity log can report already carries its display name, value, stack, keywords,
+# and the game-data version it came from.
+_MIGRATION_V4_SQL = """
+ALTER TABLE items ADD COLUMN item_value INTEGER;
+ALTER TABLE items ADD COLUMN max_stack INTEGER;
+ALTER TABLE items ADD COLUMN keywords_json TEXT;
+ALTER TABLE items ADD COLUMN icon_id INTEGER;
+ALTER TABLE items ADD COLUMN data_version TEXT;
+"""
+
+MIGRATIONS: list[tuple[int, str]] = [
+    (1, _SCHEMA_SQL),
+    (2, _MIGRATION_V2_SQL),
+    (3, _MIGRATION_V3_SQL),
+    (4, _MIGRATION_V4_SQL),
+]
 
 COUNT_TABLES = (
     "raw_events",
@@ -303,6 +321,52 @@ def get_item_display(conn: sqlite3.Connection, base_name: str, item_code: str) -
         (base_name, item_code),
     ).fetchone()
     return row["display_name"] if row else None
+
+
+_SEED_ITEMS_SQL = (
+    "INSERT INTO items (base_name, item_code, display_name, display_inferred,"
+    " times_seen, first_seen_at, item_value, max_stack, keywords_json, icon_id, data_version)"
+    " VALUES (?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?)"
+    " ON CONFLICT(base_name, item_code) DO UPDATE SET"
+    " display_name = CASE WHEN items.display_inferred = 1 THEN excluded.display_name"
+    "                     ELSE items.display_name END,"
+    " item_value = excluded.item_value,"
+    " max_stack = excluded.max_stack,"
+    " keywords_json = excluded.keywords_json,"
+    " icon_id = excluded.icon_id,"
+    " data_version = excluded.data_version"
+)
+
+
+def seed_items(
+    conn: sqlite3.Connection,
+    rows: Iterable[tuple[str, str, str, int | None, int | None, str | None, int | None, str | None]],
+) -> int:
+    """Upsert canonical catalog rows into ``items`` (idempotent).
+
+    Each row is ``(base_name, item_code, display_name, value, max_stack,
+    keywords_json, icon_id, data_version)``. Canonical rows never overwrite a
+    human-learned display name (``display_inferred=0`` keeps its name); inferred
+    rows adopt the canonical name. Metadata always refreshes while ``times_seen``
+    and ``first_seen_at`` from real sightings are preserved.
+    """
+    with conn:
+        conn.executemany(_SEED_ITEMS_SQL, list(rows))
+    return int(conn.execute("SELECT COUNT(*) AS c FROM items").fetchone()["c"])
+
+
+def seed_from_catalog(conn: sqlite3.Connection, data_dir: str | None = None) -> int:
+    """Seed ``items`` from the bundled/user catalog when the table is empty.
+
+    Used at the main entry points (CLI connect, capture pipeline, web UI build) so
+    a fresh database (or one cleared by the user) restarts with the full canonical
+    catalog instead of an empty table.
+    """
+    if conn.execute("SELECT COUNT(*) AS c FROM items").fetchone()["c"] > 0:
+        return 0
+    from . import catalog as catalog_mod
+
+    return seed_items(conn, catalog_mod.item_seed_rows(data_dir))
 
 
 def insert_burial(conn: sqlite3.Connection, session_id: int, raw_event_id: int, captured_at: int) -> int:

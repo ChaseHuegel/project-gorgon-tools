@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import datetime
 
 from gorgon_tracker.timeutil import iso_to_ms, ms_to_iso
 

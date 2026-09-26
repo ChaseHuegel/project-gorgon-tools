@@ -21,7 +21,10 @@ def _make_corrector(cfg: TrackerConfig, kind: str) -> Callable[[str], str] | Non
     """Build a per-kind name corrector, or None when name correction is disabled."""
     if not cfg.names.enabled:
         return None
-    corrector = names_mod.NameCorrector(cfg.names, cfg.names.data_dir)
+    aliases: dict[str, dict[str, str]] | None = None
+    if kind == "zones":
+        aliases = {"zones": names_mod.zone_alias_map(cfg.names.data_dir)}
+    corrector = names_mod.NameCorrector(cfg.names, cfg.names.data_dir, aliases)
 
     def correct(text: str) -> str:
         corrector.refresh_if_changed()

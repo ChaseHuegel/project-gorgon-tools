@@ -12,12 +12,16 @@ on the source:
 real pickups share with chat lines is the *anchored whole-second timestamp*.
 The correlator reconciles the two facts and resolves a canonical display name
 (see ``correlator.reconcile``). This module provides the deterministic pieces:
-splitting off the numeric code and inflating the internal slug.
+splitting off the numeric code, inflating the internal slug, and resolving a
+slug to its canonical display name via the bundled catalog
+(``catalog.item_display_for``) with the inflation heuristic as fallback.
 """
 
 from __future__ import annotations
 
 import re
+
+from . import catalog
 
 # ``ArmorPatchKit3`` -> (base="ArmorPatchKit", code="3"); chat names keep code "".
 _CODED_NAME_RE = re.compile(r"^(?P<base>.*?[A-Za-z])(?P<code>\d+)$")
@@ -37,12 +41,17 @@ def split_item_name(raw: str) -> tuple[str, str]:
 
 
 def infer_display(raw: str) -> str:
-    """Best-effort inflation of an internal name into a human display name.
+    """Best-effort display name for a raw internal name.
 
-    Drops the numeric variant code, then inserts a space before each embedded
-    uppercase letter: ``ImpressiveGoblinSkull`` -> "Impressive Goblin Skull".
-    Chat display names are returned unchanged (no embedded capitals to split).
+    Consults the bundled catalog first (authoritative), then falls back to
+    dropping the numeric variant code and inserting a space before each
+    embedded uppercase letter: ``ImpressiveGoblinSkull`` -> "Impressive Goblin
+    Skull". Chat display names are returned unchanged (no embedded capitals to
+    split).
     """
+    known = catalog.item_display_for(raw)
+    if known is not None:
+        return known
     base, _ = split_item_name(raw)
     inflated = re.sub(r"(?=[A-Z])", " ", base).strip().split()
     # Re-join single tokens that were previously glued (e.g. "GoblinCallingCard").

@@ -18,6 +18,7 @@ import type {
   ActivityDetail,
   DropRateRow,
   ItemDetail,
+  ItemMetadata,
   SearchResults,
   SourceAgg,
   SourceDetail,
@@ -902,6 +903,45 @@ function PickList({
   );
 }
 
+function ItemMetaBlock({ meta }: { meta: ItemMetadata }) {
+  return (
+    <div style={{ ...panelStyleLight, gridColumn: "1 / -1" }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem 1.5rem", fontSize: "0.85rem" }}>
+        {meta.item_value != null && (
+          <span>
+            <Muted>Value:</Muted> <strong>{meta.item_value}</strong>
+          </span>
+        )}
+        {meta.max_stack != null && (
+          <span>
+            <Muted>Max stack:</Muted> <strong>{meta.max_stack}</strong>
+          </span>
+        )}
+        {meta.icon_id != null && (
+          <span>
+            <Muted>Icon:</Muted> <strong>{meta.icon_id}</strong>
+          </span>
+        )}
+        {meta.variants > 1 && (
+          <span>
+            <Muted>Variants:</Muted> <strong>{meta.variants}</strong>
+          </span>
+        )}
+        <span>
+          <Muted>Game data:</Muted> <strong>v{meta.data_version ?? "?"}</strong>
+        </span>
+      </div>
+      {meta.keywords.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.3rem", marginTop: "0.5rem" }}>
+          {meta.keywords.map((k) => (
+            <span key={k} style={{ ...keywordStyle }}>{k}</span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LinkCell({
   kind,
   name,
@@ -1005,6 +1045,7 @@ function DetailTables({
 
   return (
     <div style={{ display: "grid", gap: "1rem", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", marginTop: "0.75rem" }}>
+      {kind === "item" && (data as ItemDetail).metadata && <ItemMetaBlock meta={(data as ItemDetail).metadata!} />}
       {kind === "source" && (
         <DataTable
           empty="No items."
@@ -1272,6 +1313,20 @@ const panelStyle: React.CSSProperties = {
   border: "1px solid var(--border)",
   borderRadius: 8,
   padding: "0.75rem",
+};
+const panelStyleLight: React.CSSProperties = {
+  background: "var(--bg)",
+  border: "1px dashed var(--border)",
+  borderRadius: 8,
+  padding: "0.6rem 0.75rem",
+};
+const keywordStyle: React.CSSProperties = {
+  border: "1px solid var(--border)",
+  borderRadius: 999,
+  padding: "0.1rem 0.55rem",
+  fontSize: "0.72rem",
+  color: "var(--muted)",
+  background: "var(--panel)",
 };
 const linkBtnStyle: React.CSSProperties = {
   border: "1px solid var(--accent)",

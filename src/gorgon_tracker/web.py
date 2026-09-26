@@ -373,6 +373,35 @@ def build_control_router(db_path: str, config_path: str | None = None) -> APIRou
         except (URLError, OSError, ValueError) as exc:
             raise HTTPException(status_code=502, detail=f"wiki name fetch failed: {exc}") from exc
 
+    # --- item/zone catalog ---------------------------------------------------
+
+    @router.get("/catalog")
+    def catalog_status() -> dict[str, Any]:
+        from . import catalog as catalog_mod
+
+        return catalog_mod.catalog_info(_cfg().catalog.data_dir)
+
+    @router.post("/catalog/update")
+    def catalog_update() -> dict[str, Any]:
+        from urllib.error import URLError
+
+        from . import catalog as catalog_mod
+
+        cfg = _cfg()
+        out_dir = Path(cfg.catalog.data_dir) if cfg.catalog.data_dir else catalog_mod.default_catalog_dir()
+        try:
+            stats = catalog_mod.update_catalog_files(out_dir)
+            catalog_mod.reload()
+            conn = db.connect(db_path)
+            db.migrate(conn)
+            try:
+                stats["seeded"] = db.seed_items(conn, catalog_mod.item_seed_rows(out_dir))
+            finally:
+                conn.close()
+            return stats
+        except (URLError, OSError, ValueError, RuntimeError) as exc:
+            raise HTTPException(status_code=502, detail=f"catalog fetch failed: {exc}") from exc
+
     # --- calibration --------------------------------------------------------
 
     @router.get("/calibrate/screens")
@@ -477,6 +506,7 @@ def _ensure_schema(db_path: str) -> None:
     conn = db.connect(db_path)
     try:
         db.migrate(conn)
+        db.seed_from_catalog(conn)
     finally:
         conn.close()
 

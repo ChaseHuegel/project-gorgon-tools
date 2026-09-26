@@ -168,6 +168,20 @@ def test_zone_change_from_loading_level() -> None:
     assert zones[0].zone == "Eltibule"
 
 
+def test_zone_change_uses_official_friendly_name_for_numbered_area() -> None:
+    events = run([LOGIN, "[20:00:00] LOADING LEVEL AreaSerbule2"])
+    zones = [e for e in events if isinstance(e, ZoneChange)]
+    assert len(zones) == 1
+    assert zones[0].zone == "Serbule Hills"
+
+
+def test_zone_change_maps_unknown_area_to_stripped_id() -> None:
+    parser = PlayerLogParser(area_names={})
+    events = run([LOGIN, "[20:00:00] LOADING LEVEL AreaBrandNew"], parser)
+    zones = [e for e in events if isinstance(e, ZoneChange)]
+    assert zones[0].zone == "BrandNew"
+
+
 def test_noise_and_nonplayer_lines_are_ignored() -> None:
     events = run(
         [

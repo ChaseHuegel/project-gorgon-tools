@@ -137,6 +137,17 @@ export interface ItemDetail {
   item: string;
   sources: DropRateRow[];
   zones: ZoneCount[];
+  metadata?: ItemMetadata | null;
+}
+
+export interface ItemMetadata {
+  display_name: string;
+  item_value: number | null;
+  max_stack: number | null;
+  icon_id: number | null;
+  keywords: string[];
+  data_version: string | null;
+  variants: number;
 }
 
 export interface ActivityDetail {
@@ -266,4 +277,21 @@ export interface NamesUpdateResult {
   zones: number;
   monsters: number;
   path: string;
+}
+
+export interface CatalogInfo {
+  data_dir: string;
+  item_source: "user" | "bundled";
+  area_source: "user" | "bundled";
+  item_count: number;
+  area_count: number;
+  version: string;
+}
+
+export interface CatalogUpdateResult {
+  version: string;
+  items: number;
+  areas: number;
+  path: string;
+  seeded?: number;
 }

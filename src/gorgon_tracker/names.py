@@ -99,9 +99,19 @@ def _file_for(kind: str, user_dir: Path) -> tuple[Path, str]:
 
 
 class _KindTable:
-    """Precomputed lookup structures for one name kind."""
+    """Precomputed lookup structures for one name kind.
 
-    def __init__(self, canonical: list[str], ratio: float, partial_ratio: float) -> None:
+    ``aliases`` maps a normalized alias to a canonical name (e.g. the zone
+    catalog's short name "Anagoge" -> "Anagoge Island").
+    """
+
+    def __init__(
+        self,
+        canonical: list[str],
+        ratio: float,
+        partial_ratio: float,
+        aliases: dict[str, str] | None = None,
+    ) -> None:
         self.canonical = canonical
         self.ratio = ratio
         self.partial_ratio = partial_ratio
@@ -116,14 +126,23 @@ class _KindTable:
         # normalize identically (e.g. wiki duplicates), so the fuzzy ranking must
         # carry its canonical partner along.
         self.corpus: list[tuple[str, str]] = list(self.by_norm.items())
+        self.by_alias: dict[str, str] = {}
+        for alias, canon_name in (aliases or {}).items():
+            self.by_alias.setdefault(_normalize(alias), canon_name)
 
 
 class NameCorrector:
     """Corrects OCR zone/monster reads against canonical name lists."""
 
-    def __init__(self, names_cfg: NamesConfig, data_dir: str | None = None) -> None:
+    def __init__(
+        self,
+        names_cfg: NamesConfig,
+        data_dir: str | None = None,
+        aliases: dict[str, dict[str, str]] | None = None,
+    ) -> None:
         self._cfg = names_cfg
         self._user_dir = Path(data_dir) if data_dir else default_names_dir()
+        self._aliases = aliases or {}
         self._tables: dict[str, _KindTable] = {}
         self._sources: dict[str, str] = {}
         self._mtimes: dict[str, int] = {}
@@ -141,6 +160,9 @@ class NameCorrector:
         if not norm:
             return text
 
+        canon = table.by_alias.get(norm)
+        if canon is not None:
+            return canon
         canon = table.by_norm.get(norm)
         if canon is not None:
             return canon
@@ -213,7 +235,12 @@ class NameCorrector:
     def _reload(self, kind: str) -> None:
         path, source = _file_for(kind, self._user_dir)
         kind_cfg = getattr(self._cfg, kind)
-        self._tables[kind] = _KindTable(_read_names(path), kind_cfg.ratio, kind_cfg.partial_ratio)
+        self._tables[kind] = _KindTable(
+            _read_names(path),
+            kind_cfg.ratio,
+            kind_cfg.partial_ratio,
+            self._aliases.get(kind),
+        )
         self._sources[kind] = source
         self._mtimes[kind] = int(path.stat().st_mtime_ns // 1_000_000) if path.is_file() else 0
 
@@ -237,6 +264,18 @@ def names_info(names_cfg: NamesConfig) -> dict[str, Any]:
     """Describe the effective name snapshot without building a corrector."""
     user_dir = Path(names_cfg.data_dir) if names_cfg.data_dir else default_names_dir()
     return NameCorrector(names_cfg, str(user_dir)).info()
+
+
+def zone_alias_map(data_dir: str | None = None) -> dict[str, str]:
+    """Short-name aliases (normalized) -> canonical zone names from the catalog.
+
+    Lets OCR reads of short names (e.g. "Anagoge") resolve to their canonical
+    full name (e.g. "Anagoge Island") even though the name lists keep the fuller
+    spelling.
+    """
+    from . import catalog as catalog_mod
+
+    return catalog_mod.zone_catalog(data_dir).aliases()
 
 
 # --- wiki fetch ---------------------------------------------------------------

@@ -44,5 +44,8 @@
 # retroactive_threshold = 0.9
 # target_fallback_seconds = 3.0   # max age of a target sighting that may attribute loot
 # search_corroboration_seconds = 2.0  # same-name corpse search window marking target loot as corpse loot
+
+# [catalog]
+# data_dir = ""   # pin item/zone catalog snapshots to a directory (defaults to user data dir)
 [ocr.zones]
 region = [1680, 31, 180, 20]

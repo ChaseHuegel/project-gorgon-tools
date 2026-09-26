@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, exportUrl } from "../api/client";
-import type { NamesInfo } from "../api/types";
+import type { CatalogInfo, NamesInfo } from "../api/types";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { FilePicker } from "../components/FilePicker";
 import { FormField, TextInput } from "../components/FormField";
@@ -14,6 +14,8 @@ export default function ImportExportPage() {
   const [portBusy, setPortBusy] = useState(false);
   const [namesInfo, setNamesInfo] = useState<NamesInfo | null>(null);
   const [namesBusy, setNamesBusy] = useState(false);
+  const [catalogInfo, setCatalogInfo] = useState<CatalogInfo | null>(null);
+  const [catalogBusy, setCatalogBusy] = useState(false);
   const [log, setLog] = useState<Array<{ kind: string; text: string; ok: boolean }>>([]);
   const [bytes, setBytes] = useState<File[]>([]);
   const [paths, setPaths] = useState<string[]>([]);
@@ -47,6 +49,10 @@ export default function ImportExportPage() {
       .names()
       .then(setNamesInfo)
       .catch(() => undefined);
+    api
+      .catalog()
+      .then(setCatalogInfo)
+      .catch(() => undefined);
   }, []);
 
   async function updateNames() {
@@ -59,6 +65,20 @@ export default function ImportExportPage() {
       push("names", e instanceof Error ? e.message : String(e), false);
     } finally {
       setNamesBusy(false);
+    }
+  }
+
+  async function updateCatalog() {
+    setCatalogBusy(true);
+    try {
+      const res = await api.updateCatalog();
+      setCatalogInfo(await api.catalog());
+      const seeded = res.seeded != null ? `; re-seeded ${res.seeded} items` : "";
+      push("catalog", `Updated: v${res.version} items=${res.items} zones=${res.areas} -> ${res.path}${seeded}`);
+    } catch (e) {
+      push("catalog", e instanceof Error ? e.message : String(e), false);
+    } finally {
+      setCatalogBusy(false);
     }
   }
 
@@ -155,6 +175,30 @@ export default function ImportExportPage() {
         <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem" }}>
           <button onClick={updateNames} disabled={namesBusy} style={btnStyle}>
             {namesBusy ? "…" : "Update names from wiki"}
+          </button>
+        </div>
+      </Card>
+
+      <Card title="Item & zone catalog">
+        <p style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
+          Canonical item names and metadata (value, stack, keywords) and official zone names from the
+          game's own data CDN. Used to identify Unity log items and zone area ids. Refresh to pin the
+          latest game data version.
+        </p>
+        {catalogInfo ? (
+          <p style={{ marginTop: "0.5rem", fontSize: "0.9rem" }}>
+            <strong>{catalogInfo.item_count} items</strong> · <strong>{catalogInfo.area_count} zones</strong>
+            <span style={{ color: "var(--muted)" }}> — game data v{catalogInfo.version}</span>
+            <StatusBadge ok={catalogInfo.item_source === "user" || catalogInfo.area_source === "user"}
+              label={catalogInfo.item_source === "user" || catalogInfo.area_source === "user" ? "user snapshot" : "bundled snapshot"} />
+            <code style={{ display: "block", marginTop: "0.4rem", fontSize: "0.8rem" }}>{catalogInfo.data_dir}</code>
+          </p>
+        ) : (
+          <p style={{ color: "var(--muted)" }}>Loading catalog…</p>
+        )}
+        <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem" }}>
+          <button onClick={updateCatalog} disabled={catalogBusy} style={btnStyle}>
+            {catalogBusy ? "…" : "Update catalog from game CDN"}
           </button>
         </div>
       </Card>

@@ -21,7 +21,8 @@ def test_migrate_legacy_loot_csv(tmp_path: Path) -> None:
         "Time,Source,ID,Activity,Item,Amount,Status,LagTime,Zone\n"
         f"{scenario.local_wall(3.5)},Rat,enc-a,Skinning,Bone,1,Linked,0.5,Ilmari\n"
         "1/24/2026 5:49:21 PM,Wolf,enc-b,Looting,Pelt,2,Linked,1.2,Fairy Glen\n"
-        f"{scenario.local_wall(5.0)},Ground/Unknown,enc-c,Looting,Dirt,1,Orphaned,1.79769313486232E+308,Phantom Ilmari Desert\n"
+        f"{scenario.local_wall(5.0)},Ground/Unknown,enc-c,Looting,Dirt,1,"
+        "Orphaned,1.79769313486232E+308,Phantom Ilmari Desert\n"
         f"{scenario.local_wall(6.0)},Ground/Unknown,enc-d,Looting,Grass,1,Orphaned,nonsense,Fairy Glen\n"
     )
     conn = _connect(tmp_path)

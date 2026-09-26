@@ -32,7 +32,7 @@ def test_connect_creates_latest_schema(tmp_path: Path) -> None:
     db.migrate(conn)
     tables = _table_names(conn)
     assert tables >= EXPECTED_TABLES
-    assert db.schema_version(conn) == 3
+    assert db.schema_version(conn) == len(db.MIGRATIONS)
     conn.close()
 
 
@@ -41,8 +41,8 @@ def test_migrate_is_idempotent(tmp_path: Path) -> None:
     db.migrate(conn)
     db.migrate(conn)
     rows = conn.execute("SELECT COUNT(*) AS c FROM schema_migrations").fetchone()
-    assert rows["c"] == 3
-    assert db.schema_version(conn) == 3
+    assert rows["c"] == len(db.MIGRATIONS)
+    assert db.schema_version(conn) == len(db.MIGRATIONS)
     conn.close()
 
 
@@ -79,7 +79,7 @@ def test_migrate_upgrades_version_1_database(tmp_path: Path) -> None:
 
     conn = db.connect(tmp_path / "old.db")
     db.migrate(conn)
-    assert db.schema_version(conn) == 3
+    assert db.schema_version(conn) == len(db.MIGRATIONS)
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(loot_drops)")}
     assert cols >= {
         "linked_via",
@@ -228,7 +228,7 @@ def test_clear_all_wipes_everything_but_schema(tmp_path: Path) -> None:
     assert cleared["sessions"] == 1
     for table in EXPECTED_TABLES:
         if table == "schema_migrations":
-            assert conn.execute(f"SELECT COUNT(*) AS c FROM {table}").fetchone()["c"] == 3
+            assert conn.execute(f"SELECT COUNT(*) AS c FROM {table}").fetchone()["c"] == len(db.MIGRATIONS)
         else:
             assert conn.execute(f"SELECT COUNT(*) AS c FROM {table}").fetchone()["c"] == 0
 
@@ -266,4 +266,83 @@ def test_insert_corpse_search_and_item_learning(tmp_path: Path) -> None:
     db.record_item(conn, "GoblinCallingCard", "15", "Gottak's Calling Card", 2000)
     row = conn.execute("SELECT * FROM items WHERE base_name='GoblinCallingCard'").fetchone()
     assert row["times_seen"] == 2
+    conn.close()
+
+def test_seed_items_populates_canonical_rows(tmp_path: Path) -> None:
+    conn = db.connect(tmp_path / "g.db")
+    db.migrate(conn)
+    from gorgon_tracker import catalog
+
+    rows = catalog.item_seed_rows()
+    assert len(rows) == 11048
+    db.seed_items(conn, rows)
+
+    row = conn.execute(
+        "SELECT * FROM items WHERE base_name='ArmorPatchKit' AND item_code='3'"
+    ).fetchone()
+    assert row["display_name"] == "Good Armor Patch Kit"
+    assert row["display_inferred"] == 0
+    assert row["times_seen"] == 0
+    assert row["item_value"] == 25
+    assert row["data_version"] == "486"
+
+    # Idempotent: re-seeding keeps one row per key.
+    db.seed_items(conn, rows)
+    assert conn.execute("SELECT COUNT(*) AS c FROM items").fetchone()["c"] == 11048
+    conn.close()
+
+
+def test_seed_items_preserves_learned_rows_and_refreshes_metadata(tmp_path: Path) -> None:
+    conn = db.connect(tmp_path / "g.db")
+    db.migrate(conn)
+    from gorgon_tracker import catalog
+
+    rows = catalog.item_seed_rows()
+    db.seed_items(conn, rows)
+
+    # A canonical (non-inferred) learned row keeps its display name.
+    db.record_item(conn, "ArmorPatchKit", "3", "Good Armor Patch Kit", 1234, inferred=False)
+    db.seed_items(conn, rows)
+    row = conn.execute(
+        "SELECT display_name, times_seen FROM items WHERE base_name='ArmorPatchKit' AND item_code='3'"
+    ).fetchone()
+    assert row["display_name"] == "Good Armor Patch Kit"
+    assert row["times_seen"] == 1  # sighting count preserved across re-seed
+
+    # Re-seed with mutated metadata refreshes value/stack/keywords.
+    altered = []
+    for r in rows:
+        base, code = r[0], r[1]
+        if code == "3":
+            altered.append((base, code, r[2], 999, r[4], r[5], r[6], "987"))
+        else:
+            altered.append(r)
+    db.seed_items(conn, altered)
+    row = conn.execute(
+        "SELECT item_value, data_version FROM items WHERE base_name='ArmorPatchKit' AND item_code='3'"
+    ).fetchone()
+    assert row["item_value"] == 999
+    assert row["data_version"] == "987"
+    conn.close()
+
+
+def test_seed_from_catalog_only_runs_when_empty(tmp_path: Path) -> None:
+    conn = db.connect(tmp_path / "g.db")
+    db.migrate(conn)
+    assert db.seed_from_catalog(conn) == 11048
+    assert db.seed_from_catalog(conn) == 0  # no-op once populated
+    conn.close()
+
+
+def test_clear_all_then_reseed_restores_catalog(tmp_path: Path) -> None:
+    conn = db.connect(tmp_path / "g.db")
+    db.migrate(conn)
+    db.seed_from_catalog(conn)
+    assert conn.execute("SELECT COUNT(*) AS c FROM items").fetchone()["c"] == 11048
+
+    cleared = db.clear_all(conn)
+    assert cleared["items"] == 11048
+    assert conn.execute("SELECT COUNT(*) AS c FROM items").fetchone()["c"] == 0
+
+    assert db.seed_from_catalog(conn) == 11048
     conn.close()

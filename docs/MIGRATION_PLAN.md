@@ -397,3 +397,11 @@ Agents working on this project must update this section. Mark items `[x]` only w
 - [x] Export: overrides applied; `--with-evidence` appends audit columns (legacy header unchanged by default)
 - [x] `sniff-inspect`: live (raw pcap retained) + offline `--pcap` modes; `strings.csv` token inventory; per-TCP-stream per-direction payload dumps; CLI command + tests
 - [x] Tests/docs: correlator evidence + harvestable classification, db v2 migration + overrides, serve filters, override API, sniff-inspect; MIGRATION_PLAN §3.3 rationale updated
+
+### Item/zone catalog preseed (official game-data CDN)
+- [x] `catalog.py`: bundled `items.json` (slug -> display + value/stack/keywords/icon) and `areas.json` (area id -> friendly/short name + adjacency), user-dir override, `update_catalog_files` + version pinning (CDN keeps only the last few game-data versions)
+- [x] Item identification: `itemdb.infer_display` resolves Unity slugs from the catalog (exact slug then `(base, code)`) before the CamelCase heuristic (`ArmorPatchKit3` -> "Good Armor Patch Kit"); correlator unchanged
+- [x] DB preseed: migration v4 adds `item_value`/`max_stack`/`keywords_json`/`icon_id`/`data_version` to `items`; `seed_items` upserts the full catalog (canonical names never override learned ones; sighting counts preserved); `seed_from_catalog` runs at CLI connect / pipeline / web build when `items` is empty (re-seeds after `clear_all`)
+- [x] Zone identification: `LOADING LEVEL Area<id>` mapped to the official friendly name in the Unity parser (`AreaSerbule2` -> "Serbule Hills"); zone-name corrector gains a short-name alias table from the catalog (`Anagoge` -> `Anagoge Island`)
+- [x] CLI `update-catalog` (+ web Import/Export "Update catalog" button, `GET/POST /api/catalog`); `[catalog] data_dir` config; item metadata (value/stack/keywords/version) surfaced in the Dashboard item drill-down
+- [x] Tests/docs: catalog load + seed + idempotency + clear-reseed, alias correction, playerlog area mapping, web catalog endpoints; README + sample `gorgon-tracker.toml` updated

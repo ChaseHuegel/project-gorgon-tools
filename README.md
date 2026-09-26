@@ -146,6 +146,40 @@ ratio = 90.0
 partial_ratio = 85.0
 ```
 
+### Item and zone catalog
+
+Canonical item and zone data ships with the package in `src/gorgon_tracker/data`
+(`items.json`, `areas.json`), fetched from Project Gorgon's official third-party
+data CDN (not the wiki). It is used three ways:
+
+- **Item identification**: the Unity `Player.log` reports loot by internal slug
+  (`ArmorPatchKit3`). The catalog maps every slug to its canonical display name
+  (`Good Armor Patch Kit`) and metadata (value, max stack, keywords, icon), so a
+  Unity-only pickup is named authoritatively instead of guessed from CamelCase.
+- **Zone identification**: `LOADING LEVEL` lines in `Player.log` use internal area
+  ids (`AreaSerbule2`); the catalog turns them into the player-visible name
+  (`Serbule Hills`). The bundled zone short names (e.g. `Anagoge` →
+  `Anagoge Island`) also feed the OCR zone corrector.
+- **Database preseed**: the catalog seeds the `items` table (value/stack/keywords
+  included) so the learned name store starts complete. Canonical names never
+  overwrite human-learned ones, and sighting counts survive re-seeding.
+
+Refresh to pin a newer game data version (the CDN only keeps the last few):
+
+```sh
+gorgon-tracker update-catalog              # fetch latest, re-seed the database
+gorgon-tracker update-catalog --to DIR     # write snapshots only, no DB write
+```
+
+The web UI has an **Update catalog from game CDN** button on the Import / Export
+page. Item drill-downs in the Dashboard show the catalog metadata (value, stack,
+keywords, game data version). Snapshot location can be pinned:
+
+```toml
+[catalog]
+# data_dir = "/path/to/my/catalog/snapshots"   # defaults to the user data dir
+```
+
 ### Migrating historical data
 
 ```sh

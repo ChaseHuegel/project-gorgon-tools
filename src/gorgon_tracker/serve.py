@@ -153,6 +153,38 @@ def _orders(sort: str | None, order: str | None) -> str:
     return f"ORDER BY {_SORT_COLUMNS[sort]} {direction}"
 
 
+def _item_metadata(db: _DB, name: str) -> dict[str, Any] | None:
+    """Best matching canonical item metadata (value/stack/keywords/icon) for a display name."""
+    rows = db.rows(
+        "SELECT display_name, MAX(item_value) AS item_value, MAX(max_stack) AS max_stack,"
+        " icon_id, keywords_json, data_version, COUNT(*) AS variants"
+        " FROM items WHERE display_name = ? COLLATE NOCASE"
+        " GROUP BY display_name, icon_id, keywords_json, data_version"
+        " ORDER BY variants DESC, item_value LIMIT 1",
+        (name,),
+    )
+    if not rows:
+        return None
+    row = rows[0]
+    meta: dict[str, Any] = {
+        "display_name": row["display_name"],
+        "item_value": row["item_value"],
+        "max_stack": row["max_stack"],
+        "icon_id": row["icon_id"],
+        "keywords": [],
+        "data_version": row["data_version"],
+        "variants": row["variants"],
+    }
+    if row["keywords_json"]:
+        try:
+            import json as _json
+
+            meta["keywords"] = _json.loads(row["keywords_json"])
+        except ValueError:
+            pass
+    return meta
+
+
 def _drop_rates(
     db: _DB,
     *,
@@ -412,7 +444,8 @@ def build_read_router(db_path: str, include_index: bool = True) -> tuple[APIRout
             + " GROUP BY zone ORDER BY drops DESC",
             (name, *time_params),
         )
-        return {"item": name, "sources": sources, "zones": zones}
+        metadata = _item_metadata(db, name)
+        return {"item": name, "sources": sources, "zones": zones, "metadata": metadata}
 
     @router.get("/api/activity/{name:path}")
     def activity_detail(name: str, since: int | None = None) -> dict[str, Any] | None:

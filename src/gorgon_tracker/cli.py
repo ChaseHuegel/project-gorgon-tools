@@ -47,6 +47,7 @@ def _apply_db(ctx: typer.Context, db_path: str | None) -> None:
 def _connect(db_path: str) -> sqlite3.Connection:
     conn = database.connect(Path(db_path).expanduser().resolve())
     database.migrate(conn)
+    database.seed_from_catalog(conn)
     return conn
 
 
@@ -332,6 +333,39 @@ def update_names(
     out_dir = to.expanduser() if to else names_mod.default_names_dir()
     stats = names_mod.update_names_files(out_dir)
     console.print(f"[green]Updated:[/green] {stats['zones']} zones, {stats['monsters']} monsters")
+    console.print(f"  {stats['path']}")
+
+
+@app.command()
+def update_catalog(
+    ctx: typer.Context,
+    to: Path | None = typer.Option(  # noqa: B008 - required by typer
+        None, "--to", help="Write catalog snapshots into this directory instead of the user data dir."
+    ),
+    db_path: str | None = typer.Option(None, "--db", help="Override the SQLite database path to re-seed."),
+) -> None:
+    """Fetch the latest item/zone catalogs from the game data CDN."""
+    from . import catalog as catalog_mod
+
+    if to:
+        out_dir = to.expanduser()
+    elif ctx.obj.catalog.data_dir:
+        out_dir = Path(ctx.obj.catalog.data_dir).expanduser()
+    else:
+        out_dir = catalog_mod.default_catalog_dir()
+
+    stats = catalog_mod.update_catalog_files(out_dir)
+    catalog_mod.reload()
+
+    if db_path or not to:
+        conn = _connect(db_path or ctx.obj.db.path)
+        try:
+            count = database.seed_items(conn, catalog_mod.item_seed_rows(out_dir))
+        finally:
+            conn.close()
+        console.print(f"[green]Re-seeded {count} catalog items into the database.[/green]")
+
+    console.print(f"[green]Updated:[/green] v{stats['version']} items={stats['items']} zones={stats['areas']}")
     console.print(f"  {stats['path']}")
 
 
