@@ -8,7 +8,8 @@ game's Unity `Player.log`, and screen OCR), correlates encounters with the loot 
 drop, and persists everything to a single SQLite database — no post-processing, no
 CSV-as-database.
 
-Design and phase tracking: [`MIGRATION_PLAN.md`](MIGRATION_PLAN.md).
+Agent navigation and development docs: [`AGENTS.md`](AGENTS.md). Design and phase tracking:
+[`docs/MIGRATION_PLAN.md`](docs/MIGRATION_PLAN.md).
 
 ## Features
 
