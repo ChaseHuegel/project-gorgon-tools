@@ -38,17 +38,28 @@ flags are private to the local database. The client never sends them.
 | `missed` | bool | Default false. |
 | `killer_json` | string\|null | Corpse-search killer table. |
 | `encounter_uuid` | string\|null | Encounter identity (see below). |
+| `encounter_activities` | list\|null | The encounter's activity ledger: `[{activity, performed_at}, ...]`. Default absent. |
 
 Unknown fields are rejected (`422`). Missing optional fields take their
-defaults. The server rejects missing required fields.
+defaults. The server rejects missing required fields. Each element of
+`encounter_activities` needs a non-empty `activity` and a positive integer
+`performed_at`.
 
-## Encounter identity
+## Encounter identity and activity ledger
 
 The public dashboard computes drop rates from distinct encounters. Each
 published row may carry `encounter_uuid`. The local tool looks the value up from
 the `encounters` table. The server upserts a matching `encounters` row (unique
 on `encounter_uuid`) and links the published drop to it. The server does not
 link rows without an encounter.
+
+The local tool also attaches `encounter_activities`, the full activity ledger of
+the drop's encounter, so the public denominator matches the local one. The
+server upserts each entry into `encounter_activities` (unique per
+`(encounter_id, activity)`). A partial publish gives a partial ledger: the
+public rate still divides by the activities the publisher sent. The local
+`gorgon-tracker backfill-encounters` command rebuilds a complete ledger for
+historical sessions.
 
 ## Ingest endpoint
 

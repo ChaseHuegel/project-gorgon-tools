@@ -19,7 +19,7 @@ Builder: `build_read_router` at `src/gorgon_tracker/serve.py:257-681`.
 | GET | `/api/sessions` | Sessions, newest first | — | array of `{id, uuid, started_at, ended_at, platform}` |
 | GET | `/api/distinct` | Distinct axis values for filters | — | `{sources[], zones[], items[], activities[]}` (NOCASE sorted) |
 | GET | `/api/summary` | Aggregate per zone/monster/activity/item | `source` (LIKE), `item` (LIKE), `zone`, `activity`, `since`, `until` | array of `{zone, monster, activity, item, total_quantity, drop_count, last_seen}`; only `status='Linked'` |
-| GET | `/api/drop-rates` | Drop-rate matrix per (monster, item) | `monster`, `item`, `zone`, `activity`, `status` (default `Linked`), `sort`, `order`, `limit` (1..5000), `offset`, `since`, `until`, `monsters`, `items` (comma lists) | array of `{monster, item, drops, quantity, encounters, drop_rate, last_seen}` |
+| GET | `/api/drop-rates` | Drop-rate matrix per (monster, activity, item) | `monster`, `item`, `zone`, `activity`, `status` (default `Linked`), `sort`, `order`, `limit` (1..5000), `offset`, `since`, `until`, `monsters`, `items` (comma lists) | array of `{monster, activity, item, drops, quantity, encounters, drop_rate, last_seen}` |
 | GET | `/api/loot` | Latest loot rows, overrides merged | `limit_rows` (default 200, 1..5000), `linked_via`, `confidence` (`high`/`uncertain`, mutually exclusive with `linked_via`) | array of effective loot rows |
 | GET | `/api/search` | Fuzzy autocomplete across three axes | `q`, `limit` (default 20, cap 100), `since`, `until` | `{sources[], items[], activities[]}`; empty `q` → empty arrays |
 | GET | `/api/source/{name}` | Monster drill-down | `since` | `{source, zones[], items[]}` |
@@ -30,6 +30,13 @@ Builder: `build_read_router` at `src/gorgon_tracker/serve.py:257-681`.
 | GET | `/api/analysis/zones` | Top zones chart | `source`, `item`, `activity`, `status` (default none), `limit`, `since`, `until` | array of `{zone, drops, sources, last_seen}` |
 | GET | `/api/analysis/items` | Top items chart | `source`, `item`, `zone`, `activity`, `status` (default `Linked`), `limit`, `since`, `until` | array of `{item, drops, sources, last_seen}` |
 | GET | `/api/stats` | Global stat cards | `source`, `item`, `zone`, `activity`, `since`, `until` | `{drops, encounters, quantity, sources, items, zones, linked, orphaned, newest_at}` |
+
+`encounters` is per-activity everywhere it appears. For `drop-rates` and
+`analysis/sources` it is the count of distinct encounters where the filtered
+activity happened (any activity when no filter is set). For `stats` it is the
+same count summed over sources. Rates divide drops by that count, so a skin
+drop divides by skinned encounters, not by every encounter. See
+`docs/specs/correlation.md` → Rates semantics.
 
 `GET /` (serve only, `serve.py:660-679`): `{service, endpoints[]}`.
 
@@ -65,10 +72,10 @@ Builder: `build_control_router` at `src/gorgon_tracker/web.py:53-467`.
 | POST | `/api/daemon/start` | Spawn capture daemon | — | daemon status |
 | POST | `/api/daemon/stop` | SIGTERM the daemon | — | daemon status |
 | POST | `/api/ports/discover` | Detect game ports + BPF | `{write_config: false}` | `{tcp, udp, bpf, persisted, found}` |
-| POST | `/api/replay` | Offline replay (upload and/or server paths) | multipart: `paths[]`, `chat_dir`, `files[]` | `{inputs, session_id, parsed_files, windows, sources, loot_kept, loot_filtered, zones, targets, burials, activities, drops}` |
+| POST | `/api/replay` | Offline replay (upload and/or server paths) | multipart: `paths[]`, `chat_dir`, `files[]` | `{inputs, session_id, parsed_files, windows, sources, loot_kept, loot_filtered, zones, targets, burials, activities, encounters, encounter_activities, drops}` |
 | POST | `/api/migrate` | Import legacy CSV/JSON | multipart: `paths[]`, `kind`, `files[]` | `{imported:[{file, session_id, kind, imported}]}` |
 | GET | `/api/export` | Loot CSV download | `since` (ISO string) | `text/csv` attachment |
-| GET | `/api/export/analysis` | Drop-rate CSV download | `source`, `item`, `zone`, `activity`, `status` (default `Linked`), `since`, `until` (ISO), `sort`, `order` | `text/csv` attachment |
+| GET | `/api/export/analysis` | Drop-rate CSV download | `source`, `item`, `zone`, `activity`, `status` (default `Linked`), `since`, `until` (ISO), `sort`, `order` | `text/csv` attachment; header `Monster,Activity,Item,Drops,Quantity,Encounters,DropRate,LastSeen` |
 | PUT | `/api/loot/{id}` | Set or merge a manual override | `{source?, status?, activity?, note?}`; `status` must be `Linked` or `Orphaned` | effective loot row; `404` unknown id |
 | DELETE | `/api/loot/{id}` | Remove override | — | `{ok: true}` |
 | POST | `/api/loot/rows/delete` | Hard-delete loot rows | `{ids: [positive ints]}` | `{deleted}` |
@@ -123,14 +130,14 @@ Mounted by `gorgon-tracker serve` only when `[serve] ingest_enabled=true` and `[
 |---|---|---|---|---|
 | POST | `/api/ingest/loot` | Receive verified loot rows | `Authorization: Bearer <ingest_token>` | `{received, created, replaced, actions:[...]}` |
 
-The natural key is `(captured_at, source, item, amount)`. The server replaces a public row with an exact key match. It inserts a new row otherwise. Rows attach to a stable synthetic "published" session. An optional `encounter_uuid` reconstructs encounters, so public drop rates keep working. The server returns `401` without the token. It returns `422` on invalid fields. See `src/gorgon_tracker/public.py`.
+The natural key is `(captured_at, source, item, amount)`. The server replaces a public row with an exact key match. It inserts a new row otherwise. Rows attach to a stable synthetic "published" session. An optional `encounter_uuid` reconstructs encounters, and an optional `encounter_activities` list (each `{activity, performed_at}`) rebuilds their activity ledger, so public drop rates keep working. The server returns `401` without the token. It returns `422` on invalid fields. See `src/gorgon_tracker/public.py`.
 
 ## Pagination and filter conventions
 
 - `limit`/`offset` exist only on `drop-rates` (`limit` clamped 1..5000, `offset` ≥ 0). Other lists are limit-only; the client pages.
 - Shared filter family: `source`, `item`, `zone`, `activity`, `since`, `until`. `since`/`until` are inclusive `captured_at` ms bounds.
 - Fuzzy `LIKE %x%` only on `/api/summary` (`source`/`item`) and `/api/search` (`q`). Everything else is exact.
-- Sort is whitelisted (`_SORT_COLUMNS`, `serve.py:61-70`): `monster, item, drops, quantity, encounters, rate, zone, activity`.
+- Sort is whitelisted (`_SORT_COLUMNS`, `serve.py:65-74`): `monster, item, drops, quantity, encounters, rate, zone, activity`.
 - `status` defaults to `Linked` on `drop-rates`, `analysis/sources`, `analysis/items`, and `export/analysis`; drill-down item lists pass no `status` so all statuses show.
 
 ## SPA serving
@@ -148,8 +155,8 @@ Recorded so agents do not re-discover it (`web/src/api/types.ts`):
 
 - The TS `Config` type omits the `playerlog`, `names`, `catalog`, `publish`, `serve` sections and `correlate.activity_window_seconds` from the wire shape.
 - The SSE `loot` payload has extra fields (`instance_id`, `entity_id`, `item_code_id`, `item_display`, `missed`, `killer_json`) and lacks `note`/`overridden`/`published`/`published_at`; pages tolerate the difference.
-- `SourceAgg` omits `last_seen`; `ReplayResult` is a partial view of an additive response.
-- `open_session_counts` keys are table names (`raw_events`, `sources`, `loot`, `burials`, `target_sightings`, `zone_changes`, `encounters`, `loot_drops`, `corpse_searches`).
+- `SourceAgg` omits `last_seen`. `ReplayResult` is a partial view of an additive response (it omits `encounters` and `encounter_activities`).
+- `open_session_counts` keys are table names (`raw_events`, `sources`, `loot`, `burials`, `target_sightings`, `zone_changes`, `encounters`, `loot_drops`, `corpse_searches`, `encounter_activities`).
 
 ## Source of truth and tests
 

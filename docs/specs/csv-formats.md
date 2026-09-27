@@ -29,10 +29,12 @@ CorroboratedBySearch,Missed,InstanceId,EntityId,ItemCodeId,KillerJson
 Header (`export.py:117`):
 
 ```text
-Monster,Item,Drops,Quantity,Encounters,DropRate,LastSeen
+Monster,Activity,Item,Drops,Quantity,Encounters,DropRate,LastSeen
 ```
 
-`DropRate` renders as a percentage with two decimals (`export.py:133`).
+Rows are per `(monster, activity, item)`. `Encounters` counts the corpses where
+that activity happened (`docs/specs/correlation.md` → Rates semantics).
+`DropRate` renders as a percentage with two decimals (`export.py:134`).
 
 ## Legacy CSV inputs
 

@@ -71,7 +71,8 @@ All modules in `src/gorgon_tracker/`.
 
 | Module | Role | Spec |
 |---|---|---|
-| `correlator.py` | Streaming correlation: links loot to monsters, assigns activity. | `docs/specs/correlation.md` |
+| `correlator.py` | Streaming correlation: links loot to monsters, assigns activity, emits the encounter ledger. | `docs/specs/correlation.md` |
+| `backfill.py` | Rebuild encounter rows and the activity ledger from `raw_events` for historical sessions. | `docs/specs/correlation.md` |
 | `ingest.py` | `DbWriter`: raw events + typed tables; loud dedup hash; item learning. | `docs/api.md` (payload shapes) |
 | `db.py` | Connect (WAL), migrations, session lifecycle, typed inserts, overrides, clear. | Schema below |
 | `schema.sql` | Baseline DDL (migration v1). | Schema below |
@@ -101,15 +102,17 @@ All modules in `src/gorgon_tracker/`.
 
 - Connection: WAL, `synchronous=NORMAL`, `foreign_keys=ON`, `busy_timeout=5000` (`db.py:114-123`).
 - Migrations: `schema_migrations` table + `PRAGMA user_version`; each migration is `executescript` then a recorded version bump (`db.py:126-143`).
-- Migration history (`MIGRATIONS`, `db.py:93-108`):
+- Migration history (`MIGRATIONS`, `db.py:154-162`):
   - v1 `schema.sql`: baseline tables + views.
   - v2: `loot_drops` evidence columns (`linked_via`, `monster_*`, `target_*`, `corroborated_by_search`); `loot_overrides` (manual corrections).
   - v3: Unity provenance (`instance_id`, `entity_id`, `item_code_id`, `item_display`, `missed`, `killer_json`); `corpse_searches`; `items` (learned names).
   - v4: catalog metadata on `items` (`item_value`, `max_stack`, `keywords_json`, `icon_id`, `data_version`).
   - v5: `corpse_searches.extractions_json` (corpse-description audit).
   - v6: `loot_publications` (publish audit: one row per `loot_drop_id`, exact payload sent).
-- Tables: `sessions`, `raw_events`, `sources`, `loot`, `burials`, `target_sightings`, `zone_changes`, `encounters`, `loot_drops`, `loot_overrides`, `corpse_searches`, `items`, `loot_publications`, `schema_migrations`.
-- Views: `v_sessions`, `v_summary`, `v_drop_rates` (see `docs/specs/correlation.md` for rates semantics).
+  - v7: `encounter_activities` (one row per `(encounter_id, activity)`, unique key dedupes repeat reports); `encounters.zone`; unique `encounters.encounter_uuid`; `v_drop_rates` reworked to per-activity denominators.
+- Tables: `sessions`, `raw_events`, `sources`, `loot`, `burials`, `target_sightings`, `zone_changes`, `encounters`, `loot_drops`, `loot_overrides`, `corpse_searches`, `items`, `loot_publications`, `encounter_activities`, `schema_migrations`.
+- Views: `v_sessions`, `v_summary`, `v_drop_rates` (per-activity denominators; see `docs/specs/correlation.md`).
+- `encounters` is written eagerly at first sighting (`ingest.py:223-236`), so a corpse that yields no recorded loot still counts as an encounter. `encounter_activities` is written from the correlator's lifecycle records. The writer dedupes on the unique key.
 - `items` is preseeded from the catalog when empty (`seed_from_catalog`); canonical names never overwrite learned ones.
 - **Public database** (`serve`): same schema. When the ingest endpoint is enabled (`[serve] ingest_enabled`), the server adds two indexes on the ingest DB (`public.py:ensure_published_schema`). `idx_loot_drops_publish_key(captured_at, source, item, amount)` supports the natural-key upsert. `idx_encounters_publish_uuid` supports encounter reconstruction. Published rows attach to one synthetic `sessions.uuid = 'published'` row, so all read queries and SSE streams work unchanged.
 
@@ -127,6 +130,7 @@ Mapper: each `@app.command()` in `src/gorgon_tracker/cli.py` is a `gorgon-tracke
 | `sniff-inspect` | Capture game traffic; inventory plaintext strings. |
 | `replay` | Offline-ingest historical captures into a retrospective session. |
 | `migrate` | Import legacy PowerShell outputs. |
+| `backfill-encounters` | Rebuild encounter rows and the activity ledger from `raw_events` for existing sessions. |
 | `update-names` | Fetch name lists from the wiki. |
 | `update-catalog` | Fetch item/zone catalogs from the CDN; re-seed the DB. |
 | `export` | Legacy-compatible CSV export. |

@@ -21,10 +21,15 @@ Agent navigation and development docs: [`AGENTS.md`](AGENTS.md).
   corpse-description "skinned/butchered/extracted" transitions in `Player.log` and
   `You skin/butcher/extract ...` chat status lines label nearby pickups, alongside the
   packet `can_*` flag transitions; a corpse that already shows the action never relabels.
+- Drop rates are per activity. Each rate divides by the encounters where that activity
+  happened, so a skin drop counts against skinned corpses, not against every dead deer.
+  The dashboard has an activity selector on the rates table and the heatmap matrix.
 - Everything lands in SQLite (WAL): raw events + typed events + correlated `loot_drops`,
   grouped into sessions you can start and stop freely.
 - Offline tools: `replay` historical `.pcapng`/JSON/chat/CSV bundles, `migrate` legacy
   PowerShell outputs, `export` a legacy-compatible CSV, and `serve` a read-only web API.
+- `backfill-encounters` rebuilds encounter and activity records for data captured before
+  per-activity rates existed (it replays each session's raw events).
 - `sniff-inspect` captures game traffic (raw pcap retained) and inventories plaintext
   strings, checking whether loot/status messages cross the wire for tighter correlation.
 - `find-ports` auto-detects the game's ephemeral network ports; `calibrate` tunes OCR regions.
@@ -233,6 +238,9 @@ gorgon-tracker replay captures/*.pcapng chatsession.log zones.csv targets.csv
 
 # Import legacy PowerShell outputs (loot.csv, zones.csv, targets.csv, parsed-*.txt):
 gorgon-tracker migrate loot.csv zones.csv targets.csv
+
+# Rebuild encounter/activity records for older captures (once, after upgrading):
+gorgon-tracker backfill-encounters
 
 # Backwards-compatible CSV export whenever you still want a spreadsheet:
 gorgon-tracker export --out loot.csv
