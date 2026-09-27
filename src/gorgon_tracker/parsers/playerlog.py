@@ -7,6 +7,10 @@ converted to absolute epoch milliseconds using the session's own clock anchor::
     [03:12:22] Logged in as character Mennelaia. Time UTC=09/24/2026 03:12:22.
                Timezone Offset -04:00:00
 
+.. note:: The live source seeds this anchor from the file's existing login line
+   at start and on rotation. A file with no login line (partial replay) falls
+   back to the current UTC wall-clock date so absolute times stay plausible.
+
 Most of the file is asset/appearance download noise; only the small set of
 ``LocalPlayer: Process*`` lines plus the session/area markers are kept.
 
@@ -27,7 +31,7 @@ full) and becomes ``LootEvent(missed=True)``.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -110,19 +114,35 @@ class PlayerLogParser:
     # -- clock ---------------------------------------------------------------
 
     def _line_ms(self, h: int, m: int, s: int) -> int:
-        if self._anchor is None:
-            # No login line yet (partial replay): keep ordering monotonic about
-            # the wall clock so cross-source merging still uses the same second.
-            base = datetime(1970, 1, 1, h, m, s, tzinfo=UTC)
-        else:
-            base = datetime(
-                self._anchor.year, self._anchor.month, self._anchor.day, h, m, s, tzinfo=UTC
-            )
+        # No login line seen (e.g. live capture started mid-session, or a partial
+        # replay): anchor the date to the current UTC wall clock so absolute
+        # timestamps are plausible for cross-source merging.
+        base_date = datetime.now(UTC).date() if self._anchor is None else self._anchor.date()
+        base = datetime(base_date.year, base_date.month, base_date.day, h, m, s, tzinfo=UTC)
         if self._last_epoch_ms is not None and base.timestamp() * 1000 < self._last_epoch_ms - 60_000:
             base = base + timedelta(days=1)
         ms = round(base.timestamp() * 1000)
         self._last_epoch_ms = ms
         return ms
+
+    def set_anchor_from(self, lines: Iterable[str]) -> None:
+        """Seed the UTC date anchor from the last login line in ``lines``.
+
+        A Player.log holds one or more sessions; the final login line names the
+        date the current session started. ``lines`` are scanned only for the
+        anchor and not emitted, so tailing from the file end stays correct
+        without re-capturing already-seen events.
+        """
+        anchor: datetime | None = None
+        for line in lines:
+            match = LOGIN_RE.search(line)
+            if match:
+                anchor = datetime.strptime(match.group("utc"), "%m/%d/%Y %H:%M:%S").replace(
+                    tzinfo=UTC
+                )
+        if anchor is not None:
+            self._anchor = anchor
+            self._last_epoch_ms = round(anchor.timestamp() * 1000)
 
     def _anchor_from(self, line: str) -> bool:
         match = LOGIN_RE.search(line)

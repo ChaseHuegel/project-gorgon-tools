@@ -7,7 +7,10 @@ file to ``Player-prev.log`` at every launch, so this source:
   mid-session never re-emits already-seen events);
 * optionally backfills ``Player-prev.log`` once at startup;
 * detects rotation/truncation by file identity and starts a fresh parse session,
-  which also re-anchors the UTC clock from the new session's login line.
+  which also re-anchors the UTC clock from the new session's login line;
+* seeds the UTC date anchor from the current file's existing login line at
+  startup when tailing from the end, so a mid-session start still stamps real
+  epoch times.
 """
 
 from __future__ import annotations
@@ -79,7 +82,16 @@ def produce(
             tracked = log_path
             tracked_key = current_key
             parser = playerlog_parser.PlayerLogParser()
-            offset = stat.st_size if is_initial and not pcfg.tail_from_start else 0
+            if is_initial and not pcfg.tail_from_start:
+                # Start from the end, so the top-of-file login line is never
+                # fed. Seed the parser's UTC date anchor from that line now so
+                # timestamps are real epoch ms (not a 1970 fallback) and match
+                # the chat source for cross-source dedupe.
+                existing, _ = _read_append(log_path, 0)
+                parser.set_anchor_from(iter(existing.splitlines()))
+                offset = stat.st_size
+            else:
+                offset = 0
 
         if stat.st_size < offset:
             offset = 0

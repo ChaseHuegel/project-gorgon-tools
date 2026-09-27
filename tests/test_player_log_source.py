@@ -48,8 +48,14 @@ def test_produce_tails_from_end(tmp_path: Path) -> None:
 
     stop.set()
     thread.join(timeout=3)
-    items = [e.item for e in collected if hasattr(e, "item")]
-    assert items == ["BatWing"]
+    drops = [e for e in collected if hasattr(e, "item")]
+    assert [e.item for e in drops] == ["BatWing"]
+    # The login line predates the tail start, so the delivered timestamp must be
+    # anchored to it (real UTC epoch), not the 1970 fallback.
+    from datetime import UTC, datetime
+
+    batwing = next(e for e in drops if e.item == "BatWing")
+    assert batwing.time_ms == round(datetime(2026, 1, 11, 20, 0, 2, tzinfo=UTC).timestamp() * 1000)
 
 
 def test_rotation_reparses_new_file(tmp_path: Path) -> None:
@@ -67,6 +73,27 @@ def test_rotation_reparses_new_file(tmp_path: Path) -> None:
     thread.join(timeout=3)
     items = [e.item for e in collected if hasattr(e, "item")]
     assert items == ["RatJaw"]
+    from datetime import UTC, datetime
+
+    ratjaw = next(e for e in collected if getattr(e, "item", None) == "RatJaw")
+    assert ratjaw.time_ms == round(datetime(2026, 1, 11, 20, 0, 3, tzinfo=UTC).timestamp() * 1000)
+
+
+def test_no_login_falls_back_to_wall_clock_date(tmp_path: Path) -> None:
+    log = tmp_path / "Player.log"
+    log.write_text(_pickup(1.0, "OldBone", -1) + "\n")
+
+    collected, stop, thread = _capture(_cfg(tmp_path))
+    with log.open("a") as fh:
+        fh.write(_pickup(2.0, "BatWing", -2) + "\n")
+    time.sleep(0.2)
+    stop.set()
+    thread.join(timeout=3)
+
+    from datetime import UTC, datetime
+
+    batwing = next(e for e in collected if getattr(e, "item", None) == "BatWing")
+    assert datetime.fromtimestamp(batwing.time_ms / 1000, tz=UTC).year >= 2025
 
 
 def test_backfill_prev_once(tmp_path: Path) -> None:

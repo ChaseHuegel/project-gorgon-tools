@@ -55,6 +55,16 @@ def test_links_drop_to_most_recent_source() -> None:
     assert drops[0].zone == "Unknown"
 
 
+def test_chat_and_unity_same_second_dedupe_to_one() -> None:
+    c = Correlator()
+    chat_item = LootEvent(time_ms=make(10.0), item="Panther Tail", amount=1, source_class="chat")
+    unity_item = LootEvent(time_ms=make(10.0), item="PantherTail", amount=1, source_class="unity", instance_id=-5)
+    drops = _run(c, [("source", src(9.0, "Fey Panther")), ("loot", chat_item), ("loot", unity_item)])
+    assert len(drops) == 1
+    assert drops[0].item == "Panther Tail"
+    assert drops[0].source == "Fey Panther"
+
+
 def test_orphan_uses_target_sighting() -> None:
     c = Correlator()
     drops = _run(

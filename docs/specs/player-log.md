@@ -21,7 +21,9 @@ At every game launch the game rotates `Player.log` to `Player-prev.log` and star
 [03:12:22] Logged in as character Mennelaia. Time UTC=09/24/2026 03:12:22. Timezone Offset -04:00:00
 ```
 
-Regex: `LOADING` no field; login handled at `src/gorgon_tracker/parsers/playerlog.py:37-41`. `_line_ms` (playerlog.py:112-125) builds absolute epoch ms from the log's `HH:MM:SS` plus the anchored UTC date, with a rollover guard (`+1 day`) if stamps drop more than 60 s behind the last seen value.
+Regex: `LOADING` no field; login handled at `src/gorgon_tracker/parsers/playerlog.py:37-41`. `_line_ms` (playerlog.py:116-129) builds absolute epoch ms from the log's `HH:MM:SS` plus the anchored UTC date, with a rollover guard (`+1 day`) if stamps drop more than 60 s behind the last seen value.
+
+The live source `sources/player_log.py` tails from the file end by default, so the top-of-file login line is never fed. It seeds the anchor with `set_anchor_from` (playerlog.py:131-148) by scanning the existing file at start and again on rotation, so timestamps are real epoch ms. A file with no login line (partial replay) falls back to the current UTC wall-clock date (`_line_ms`, playerlog.py:117-121) so absolute times stay plausible and match the chat source for cross-source dedupe (`specs/correlation.md`).
 
 ## Corpus lines
 

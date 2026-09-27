@@ -42,6 +42,23 @@ def test_login_anchors_stamp_to_utc_epoch() -> None:
     assert pickups[0].time_ms == _at(1.0)
 
 
+def test_set_anchor_from_seeds_tail_from_end() -> None:
+    parser = PlayerLogParser()
+    parser.set_anchor_from(iter([LOGIN]))
+    events = run(["[20:00:01] LocalPlayer: ProcessAddItem(BatWing(-1), -1, True)"], parser)
+    pickups = [e for e in events if isinstance(e, LootEvent)]
+    assert pickups[0].time_ms == _at(1.0)
+
+
+def test_no_login_falls_back_to_wall_clock_date() -> None:
+    from datetime import UTC, datetime
+
+    events = run(["[20:00:01] LocalPlayer: ProcessAddItem(BatWing(-1), -1, True)"])
+    pickups = [e for e in events if isinstance(e, LootEvent)]
+    assert datetime.fromtimestamp(pickups[0].time_ms / 1000, tz=UTC).year >= 2025
+    assert pickups[0].time_ms > 0
+
+
 def test_add_item_true_is_pickup_false_is_load() -> None:
     events = run(
         [
