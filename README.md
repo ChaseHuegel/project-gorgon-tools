@@ -241,6 +241,8 @@ gorgon-tracker migrate loot.csv zones.csv targets.csv
 
 # Rebuild encounter/activity records for older captures (once, after upgrading):
 gorgon-tracker backfill-encounters
+#   Covers live/replay sessions (replays their raw events) and legacy CSV imports
+#   (derives the ledger from the imported drop activities).
 
 # Backwards-compatible CSV export whenever you still want a spreadsheet:
 gorgon-tracker export --out loot.csv

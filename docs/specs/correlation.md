@@ -129,6 +129,8 @@ Encounters are written eagerly at first sighting (`ingest.py:223-236`), so a cor
 
 Sessions captured before activity tracking only have drop-derived encounters. `gorgon-tracker backfill-encounters` replays each session's own `raw_events` through the correlator and writes the missing ledger (`src/gorgon_tracker/backfill.py`). Rebuilt encounters match existing rows by (monster, drop times). Zero-drop corpses match by (monster, zone, start time). Loot rows are never rewritten.
 
+Sessions whose `raw_events` contain no corpse events cannot be replayed. This covers legacy CSV imports, where the loot rows already carry monster, activity, and encounter identity. For those sessions the drops are the only evidence, so the backfill derives the ledger from them: each distinct drop activity on an encounter becomes one row at the earliest drop time (`_derive_legacy_ledger`). The backfill also stamps the encounter's zone and end time from the drops. Skinned corpses that yielded no loot are unknowable in legacy data, so the derived ledger records only observed activities. The CLI table and the API result show the derived count.
+
 ## Source of truth and tests
 
 - Correlator: `src/gorgon_tracker/correlator.py`

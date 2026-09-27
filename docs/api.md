@@ -65,7 +65,7 @@ Builder: `build_control_router` at `src/gorgon_tracker/web.py:53-467`.
 
 | Method | Path | Purpose | Body / query | Response |
 |---|---|---|---|---|
-| GET | `/api/status` | UI status | — | `{db_path, config_path, config_db_path, sessions_total, open_session_id, open_session_counts, daemon, warnings, publish}` where `publish` is `{configured, url}` (token never exposed) |
+| GET | `/api/status` | UI status | — | `{db_path, config_path, config_db_path, sessions_total, open_session_id, open_session_counts, daemon, warnings, publish}` where `publish` is `{configured, url}` (token never exposed) and `warnings` may include a note that a session has loot without an activity ledger (run `backfill-encounters`) |
 | GET | `/api/chat/tail` | Tail the newest chat log | `limit` (default 500, cap 5000) | `{found, log_dir, file, mtime_ms, start_offset, reason, lines:[{text, kind}]}` where `kind` is `loot`, `bury`, or null |
 | GET | `/api/config` | Effective config + path | — | `{path, config}` |
 | PUT | `/api/config` | Partial config write | `{updates: {"section.key": value}}` (non-empty); `422` on pydantic error | `{path, config}` |
@@ -74,6 +74,7 @@ Builder: `build_control_router` at `src/gorgon_tracker/web.py:53-467`.
 | POST | `/api/ports/discover` | Detect game ports + BPF | `{write_config: false}` | `{tcp, udp, bpf, persisted, found}` |
 | POST | `/api/replay` | Offline replay (upload and/or server paths) | multipart: `paths[]`, `chat_dir`, `files[]` | `{inputs, session_id, parsed_files, windows, sources, loot_kept, loot_filtered, zones, targets, burials, activities, encounters, encounter_activities, drops}` |
 | POST | `/api/migrate` | Import legacy CSV/JSON | multipart: `paths[]`, `kind`, `files[]` | `{imported:[{file, session_id, kind, imported}]}` |
+| POST | `/api/backfill` | Rebuild encounter rows and the activity ledger from raw events (or from drops for legacy sessions) | — | `{sessions:[{session_id, encounters_created, encounters_matched, derived, activities}]}` |
 | GET | `/api/export` | Loot CSV download | `since` (ISO string) | `text/csv` attachment |
 | GET | `/api/export/analysis` | Drop-rate CSV download | `source`, `item`, `zone`, `activity`, `status` (default `Linked`), `since`, `until` (ISO), `sort`, `order` | `text/csv` attachment; header `Monster,Activity,Item,Drops,Quantity,Encounters,DropRate,LastSeen` |
 | PUT | `/api/loot/{id}` | Set or merge a manual override | `{source?, status?, activity?, note?}`; `status` must be `Linked` or `Orphaned` | effective loot row; `404` unknown id |
