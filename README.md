@@ -8,8 +8,7 @@ game's Unity `Player.log`, and screen OCR), correlates encounters with the loot 
 drop, and persists everything to a single SQLite database — no post-processing, no
 CSV-as-database.
 
-Agent navigation and development docs: [`AGENTS.md`](AGENTS.md). Design and phase tracking:
-[`docs/MIGRATION_PLAN.md`](docs/MIGRATION_PLAN.md).
+Agent navigation and development docs: [`AGENTS.md`](AGENTS.md).
 
 ## Features
 
@@ -78,8 +77,8 @@ capture daemon, and lets you browse loot data — no terminal needed for everyda
   paginated rates/summary view, a search-first item finder with drill-downs into sources/items/zones/activities,
   and a monster × item rate matrix heatmap. Filters and the active tab live in the URL (shareable), results
   export to CSV (via Recharts).
-- **Loot** — filter a stream of correlated drops; export to the legacy CSV; check rows and
-  **Publish** the verified ones to a configured public server (see below); published rows get a badge.
+- **Loot** — filter a stream of correlated drops, export to the legacy CSV, check rows, and
+  **Publish** the verified ones to a configured public server (see below). Published rows get a badge.
 - **Sessions** — browse capture sessions and their timing.
 - **Config** — edit `gorgon-tracker.toml` from forms (only changed keys are written,
   so comments and formatting survive).
@@ -89,10 +88,10 @@ capture daemon, and lets you browse loot data — no terminal needed for everyda
 
 ### Public deployment
 
-`gorgon-tracker serve` is the deployable public surface: it serves **only** the read-only
+`gorgon-tracker serve` is the deployable public surface. It serves only the read-only
 API, SSE, and a dedicated read-only web UI (`Dashboard`, `Loot`, `Sessions`, `About`).
-No config, daemon, calibration, or edit/delete endpoints are ever mounted. Point it at a
-public database and run it behind a reverse proxy handling TLS:
+It never mounts config, daemon, calibration, or edit/delete endpoints. Point it at a
+public database. Run it behind a reverse proxy that handles TLS:
 
 ```sh
 gorgon-tracker serve --host 0.0.0.0 --port 80 --config public.toml
@@ -111,11 +110,11 @@ ingest_token = "files-the-stars"
 
 ### Publishing verified loot
 
-The local tool captures and audits in its own SQLite database. To expose data publicly:
-review and fix rows in the local **Loot** page, check the rows you trust, then click
-**Publish selected**. That pushes the exact row copies to the public server's write-only
-ingest endpoint and records the outcome locally. Configure the local `[publish]` section
-(the token must match the server's `[serve] ingest_token`):
+The local tool captures and audits data in its own SQLite database. To expose data
+publicly, review and fix rows in the local **Loot** page. Check the rows you trust and
+click **Publish selected**. The tool pushes the exact row copies to the public server's
+write-only ingest endpoint. It records the outcome locally. Configure the local
+`[publish]` section. The token must match the server's `[serve] ingest_token`:
 
 ```toml
 [publish]

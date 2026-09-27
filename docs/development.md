@@ -35,9 +35,10 @@ npm test            # vitest
 npm run build       # builds BOTH profiles into ../src/gorgon_tracker/static (app/ + public/)
 ```
 
-Two build profiles share `web/src/`: `vite build` (local UI → `static/app/`) and
-`vite build --config vite.public.config.ts` (public read-only UI → `static/public/`, then a
-post-build rename to `index.html`). CI runs both.
+`vite build` and `vite build --config vite.public.config.ts` are the two build
+profiles. They share `web/src/`. `vite build` builds the local UI into
+`static/app/`. The public profile builds the read-only UI into `static/public/`.
+A post-build step renames the public entry to `index.html`. CI runs both.
 
 ## Testing conventions
 
@@ -91,7 +92,7 @@ Canonical source: `src/gorgon_tracker/config.py` (pydantic models). The sample f
 | `[publish]` | `url` | `""` | Public server base URL (e.g. `https://loot.example.com`) |
 | `[publish]` | `token` | `""` | Bearer token for the public server's ingest endpoint (`[serve] ingest_token` on the public box) |
 | `[serve]` | `ingest_enabled` | `false` | Allow `POST /api/ingest/loot` on the public server |
-| `[serve]` | `ingest_token` | `""` | Bearer token required by the ingest endpoint; must be set when `ingest_enabled=true` |
+| `[serve]` | `ingest_token` | `""` | Bearer token required by the ingest endpoint. Set it when `ingest_enabled=true` |
 
 Config file discovery: explicit path or `$GORGON_TRACKER_CONFIG`, then `gorgon-tracker.toml` in the working dir, then `~/.config/gorgon-tracker/config.toml` (`config.py:135`, `:265-285`). `db.path` is absolutized on load; empty `chat.log_dir`/`playerlog.path` auto-fill from Steam/Proton discovery (`config.py:251-262`).
 
@@ -102,7 +103,30 @@ Environment overrides for OCR headless/tests: `GORGON_TRACKER_SCREEN_METHOD` (`a
 - Follow the conventions in `docs/architecture.md`. Type hints everywhere (mypy strict). One module = one concern.
 - Event DTOs are frozen dataclasses in `correlator.py`; parsers are pure functions or stateful classes; sources are `Callable[[Event], None]` producers.
 - Add a config key for any new tunable; never hardcode a correlation constant.
-- User-visible strings and docs: STE (Simplified Technical English) — active voice, one name per thing, short sentences. No marketing adjectives.
+
+## STE writing (required)
+
+Write all user-visible strings and all documentation in Simplified Technical
+English (ASD-STE100) as implemented by the `ste-writing` skill. This is
+mandatory, not optional. The skill has two modes:
+
+- **strict** — procedures, runbooks, safety text, error messages: apply every
+  rule and the 20/25 word caps.
+- **STE-flavored** — general prose (docs, READMEs): apply the sentence,
+  paragraph, active-voice, and phrasal-verb rules. Keep one name per thing.
+
+Lint your prose before finalizing:
+
+- One name for one thing. Do not call an item two ways.
+- Active voice. "The parser reads the file", not "the file is read by the parser".
+- One verb for one action. "analyze the log", not "perform an analysis of the log".
+- Short sentences. Max 20 words for an instruction. Max 25 for a description.
+- No semicolons. Split the sentence in two.
+- No contractions. Use articles (a, an, the).
+- No marketing adjectives (seamless, robust, powerful).
+
+STE applies to docs, READMEs, comments, error messages, and UI text. It does
+not apply to code, identifiers, or command syntax.
 
 ## Commit rules
 
@@ -118,4 +142,5 @@ Documentation is part of every change. Full protocol in `docs/README.md`. Minimu
 1. If a data format, correlation rule, config key, DB table, API route, or response shape changed, update the matching doc in `docs/` (specs live in `docs/specs/`).
 2. If no doc covers the behavior, add one; single subject per doc.
 3. Keep the "source of truth" file:line pointers current so the next agent finds the new code fast.
-4. Never duplicate what a module docstring already states; link instead.
+4. Never duplicate what a module docstring already states. Link instead.
+5. Write the doc or the user-visible string in STE (see the "STE writing" section above). Run the ste-writing skill before you edit or create any prose.

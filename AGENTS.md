@@ -61,7 +61,7 @@ CI runs the same on every push/PR (`.github/workflows/ci.yml`).
   - Event DTOs are frozen dataclasses in `src/gorgon_tracker/correlator.py`; parsers and sources follow the patterns in `docs/architecture.md`.
   - Any new tunable is a config key, never a hardcoded constant.
   - Timestamps are UTC epoch milliseconds everywhere.
-  - Prose in user-visible strings and docs: STE (active voice, one name per thing, short sentences).
+  - **STE is mandatory.** All user-visible strings and all documentation must be Simplified Technical English (ASD-STE100) as implemented by the `ste-writing` skill. Load the skill before you write or edit any prose. Active voice. One name per thing. Short sentences. No semicolons. No contractions. No marketing adjectives.
 - Do not add comments to code unless the behavior is genuinely non-obvious (matching module docstring style).
 
 ## Commit rules
@@ -69,10 +69,6 @@ CI runs the same on every push/PR (`.github/workflows/ci.yml`).
 - One logical change per commit.
 - Subject: imperative, capitalized, single line, no prefix. Example: `Add item and zone catalogs from the game data CDN`.
 - Simple commits on `main`; no feature branches unless the user asks.
-- Update the plan tracker docs when the change matches a tracked item:
-  - CLI/core work → the tracker section in `docs/MIGRATION_PLAN.md`.
-  - Web UI work → the tracker section in `docs/FRONTEND-PLAN.md`.
-  - Mark `[x]` only when verified (tests/lint/typecheck pass); keep one item `[/]` at a time.
 
 ## Docs pass (required)
 
@@ -82,6 +78,7 @@ Documentation is part of every change. After your change, before finalizing:
 2. If no doc covers the behavior, create one. Data formats go in `docs/specs/`; one subject per doc.
 3. Refresh the "source of truth" file:line pointers in the doc.
 4. Link instead of duplicating: if a module docstring states it, point to the module.
+5. Write any new or changed doc prose in STE. This is mandatory. See `docs/development.md` → `STE writing`.
 
 Full protocol: `docs/README.md`.
 

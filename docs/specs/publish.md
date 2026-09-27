@@ -1,28 +1,23 @@
 # Spec: publish and ingest
 
-This spec is the single source of truth for moving verified loot rows from the
-local capture tool to a public server. The wire contract is shared: the local
-client (`src/gorgon_tracker/publish.py`) and the server-side ingest validator
-(`src/gorgon_tracker/public.py`) both build on the field list below.
+This spec is the source of truth for moving verified loot rows from the local
+capture tool to a public server. Both sides use the same wire contract. The
+local client (`src/gorgon_tracker/publish.py`) and the server-side ingest
+validator (`src/gorgon_tracker/public.py`) build on the field list below.
 
 ## Flow
 
 1. The local tool captures loot into its own SQLite database.
-2. The owner fixes rows in the local Loot page (overrides), checks the rows to
-   publish, and clicks **Publish selected**.
-3. The local tool builds the *effective* (override-merged) payload for each
-   checked row and POSTs batches (max 500) to
-   `<publish.url>/api/ingest/loot` with `Authorization: Bearer <token>`.
-4. The public server validates, inserts, and audits each row in its own
-   database. Re-publishing a corrected row replaces the public copy.
-5. The local tool records each outcome in `loot_publications` (one row per
-   `loot_drop_id`, latest state).
+2. The owner fixes rows in the local Loot page (overrides). The owner checks the rows to publish and clicks **Publish selected**.
+3. The local tool builds the *effective* (override-merged) payload for each checked row. It POSTs batches (max 500) to `<publish.url>/api/ingest/loot`. It sends `Authorization: Bearer <token>`.
+4. The public server validates, inserts, and audits each row in its own database. Re-publishing a corrected row replaces the public copy.
+5. The local tool records each outcome in `loot_publications` (one row per `loot_drop_id`, latest state).
 
 ## Payload
 
 Each row is a JSON object of the publish fields with the local row's *effective*
 values (manual overrides applied). The local `id`, `note`, and `overridden`
-flags are private to the local database and are never sent.
+flags are private to the local database. The client never sends them.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -45,26 +40,23 @@ flags are private to the local database and are never sent.
 | `encounter_uuid` | string\|null | Encounter identity (see below). |
 
 Unknown fields are rejected (`422`). Missing optional fields take their
-defaults; missing required fields are rejected.
+defaults. The server rejects missing required fields.
 
 ## Encounter identity
 
-The public dashboard computes drop rates from distinct encounters. To
-reconstruct encounters on the public server, each published row may carry
-`encounter_uuid` (looked up from the local `encounters` table). The server
-upserts a matching `encounters` row (unique on `encounter_uuid`) and links the
-published drop to it. Rows without an encounter are stored unlinked.
+The public dashboard computes drop rates from distinct encounters. Each
+published row may carry `encounter_uuid`. The local tool looks the value up from
+the `encounters` table. The server upserts a matching `encounters` row (unique
+on `encounter_uuid`) and links the published drop to it. The server does not
+link rows without an encounter.
 
 ## Ingest endpoint
 
 `POST /api/ingest/loot`
 
 - Body: `{"rows": [<payload>, ...]}` with 1..500 rows.
-- Auth: `Authorization: Bearer <token>`; token must equal `[serve] ingest_token`.
-- Natural-key upsert: a public row with the same `(captured_at, source, item,
-  amount)` is **replaced** by the new payload; otherwise it is inserted. Only the
-  unique indexes `idx_loot_drops_publish_key` and `idx_encounters_publish_uuid`
-  exist on the public database — never on the local capture DB.
+- Auth: `Authorization: Bearer <token>`. The token must equal `[serve] ingest_token`.
+- Natural-key upsert: the new payload **replaces** a public row with the same `(captured_at, source, item, amount)`. Otherwise the server inserts a new row. The unique indexes `idx_loot_drops_publish_key` and `idx_encounters_publish_uuid` exist only on the public database. They never exist on the local capture DB.
 - Response: `{received, created, replaced, actions: ["created"|"replaced", ...]}`
   where `actions` is parallel to the submitted `rows`.
 
@@ -88,8 +80,8 @@ loot_publications (
 )
 ```
 
-`payload_json` is the exact effective payload sent; `status` is `ok` or
-`failed`; `message` carries the remote outcome or the error.
+`payload_json` is the exact effective payload sent. `status` is `ok` or
+`failed`. `message` carries the remote outcome or the error.
 
 ## Source of truth
 
@@ -100,5 +92,6 @@ loot_publications (
 - Config keys: `[publish]` and `[serve]` (see `docs/development.md`).
 - Tests: `tests/test_public.py`, `tests/test_publish.py`.
 
-Publish rows onto a read-only public frontend; the public server never exposes
-control endpoints. See `docs/architecture.md` for the surface split.
+The local tool publishes rows onto a read-only public frontend. The public
+server never exposes control endpoints. See `docs/architecture.md` for the
+surface split.

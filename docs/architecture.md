@@ -26,8 +26,8 @@ Every event keeps `time_ms` in UTC epoch milliseconds; SQLite stores the same (`
 ## Process model
 
 - **Capture daemon** (`gorgon-tracker run`): the only writer. Runs the pipeline; owns the SQLite connection on its own thread. Started with `run --daemon` (double-fork + `setsid`, `daemon.py:34-52`) or from the web UI. One instance per DB, tracked by a pidfile at `<db parent>/gorgon-tracker.pid`.
-- **Web server** (`gorgon-tracker web`): the local tool. Full read API + control API + full SPA over the local DB. Does config writes, replay, migrate, export, calibration, overrides, delete, and publish inline; it never runs the capture pipeline.
-- **Public server** (`gorgon-tracker serve`): the deployable, read-only public surface. Mounts only the read API, the public SPA, and (when `[serve]` configures it) the token-protected publish ingest. It can point at any gorgon-tracker database — typically a *public* database that receives published rows. No control endpoint is ever mounted here.
+- **Web server** (`gorgon-tracker web`): the local tool. Full read API + control API + full SPA over the local DB. It does config writes, replay, migrate, export, calibration, overrides, delete, and publish inline. It never runs the capture pipeline.
+- **Public server** (`gorgon-tracker serve`): the deployable, read-only public surface. It mounts the read API, the public SPA, and (when `[serve]` configures it) the token-protected publish ingest. It can point at any gorgon-tracker database. It typically points at a *public* database that receives published rows. It never mounts a control endpoint.
 - **Offline commands** (`replay`, `migrate`): open their own session and feed the same parsers + correlator, then close the session as retrospective.
 
 Single-writer rule: only the pipeline thread touches the SQLite connection during capture. Everything else opens short-lived read connections (`serve.py:229-254`).
@@ -111,7 +111,7 @@ All modules in `src/gorgon_tracker/`.
 - Tables: `sessions`, `raw_events`, `sources`, `loot`, `burials`, `target_sightings`, `zone_changes`, `encounters`, `loot_drops`, `loot_overrides`, `corpse_searches`, `items`, `loot_publications`, `schema_migrations`.
 - Views: `v_sessions`, `v_summary`, `v_drop_rates` (see `docs/specs/correlation.md` for rates semantics).
 - `items` is preseeded from the catalog when empty (`seed_from_catalog`); canonical names never overwrite learned ones.
-- **Public database** (`serve`): same schema, plus two indexes created only on the public DB (`public.py:ensure_published_schema`): `idx_loot_drops_publish_key(captured_at, source, item, amount)` (natural-key upsert) and `idx_encounters_publish_uuid` (encounter reconstruction). Published rows attach to one synthetic `sessions.uuid = 'published'` row so all read queries and SSE streams work unchanged.
+- **Public database** (`serve`): same schema, plus two indexes. The server creates both only on the public DB (`public.py:ensure_published_schema`). `idx_loot_drops_publish_key(captured_at, source, item, amount)` supports the natural-key upsert. `idx_encounters_publish_uuid` supports encounter reconstruction. Published rows attach to one synthetic `sessions.uuid = 'published'` row, so all read queries and SSE streams work unchanged.
 
 ## CLI commands
 
@@ -137,7 +137,7 @@ Mapper: each `@app.command()` in `src/gorgon_tracker/cli.py` is a `gorgon-tracke
 
 ## Frontend structure
 
-`web/` is a Vite + React + TypeScript SPA with **two build profiles** sharing one source tree (`web/src/`):
+`web/` is a Vite + React + TypeScript SPA. It has **two build profiles** that share one source tree (`web/src/`).
 
 - Local profile (default `vite.config.ts`) → `src/gorgon_tracker/static/app/`: Status, Dashboard, Loot, Sessions, Config, Calibrate, Import/Export.
 - Public profile (`vite.public.config.ts`) → `src/gorgon_tracker/static/public/`: high-level nav + read-only pages only.
@@ -147,7 +147,7 @@ Key files (`web/src/`):
 | Path | Role |
 |---|---|
 | `App.tsx`, `main.tsx` | Local router shell (sidebar layout). |
-| `App.public.tsx`, `main.public.tsx`, `index.public.html` (web root) | Public router shell + entry; read-only pages only. |
+| `App.public.tsx`, `main.public.tsx`, `index.public.html` (web root) | Public router shell + entry. Read-only pages only. |
 | `api/client.ts`, `api/types.ts` | Typed fetch wrapper + backend JSON types. |
 | `hooks/useApi.ts`, `hooks/useSse.ts` | Data fetch (debounced, filterable) and SSE subscription. |
 | `pages/Status.tsx` | Daemon toggle, live counters, chat tail, warnings. |

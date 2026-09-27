@@ -40,7 +40,7 @@ The "source of truth" is the code; docs record behavior so agents do not re-disc
 3. **Update or create.** Edit the matching doc to reflect the new behavior. If the behavior has no home, create a new doc. Put data formats in `docs/specs/`. Keep one subject per doc so a fetch stays focused.
 4. **Fix the pointers.** Refresh the "source of truth" file:line references so the next reader lands on the new code.
 5. **Do not document what is obvious.** If a module docstring already states the fact, delete the doc copy and keep the pointer. Docs exist to make the non-obvious explicit.
-6. **Keep it minimal.** One name per thing. Active voice. Short sentences (STE-flavored).
+6. **Write in STE (mandatory).** All documentation prose and all user-visible strings are Simplified Technical English (ASD-STE100). Load the `ste-writing` skill before you write or edit prose. Use active voice. One name per thing. Short sentences. No semicolons. No contractions. No marketing adjectives. Procedures use strict STE. General prose uses STE-flavored. Detailed rules: `docs/development.md` → `STE writing (required)`.
 
 ### Examples of changes that trigger a docs pass
 
