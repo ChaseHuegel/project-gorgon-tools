@@ -88,6 +88,33 @@ class ItemCode:
 
 
 @dataclass(frozen=True)
+class EncounterBegin:
+    """A corpse encounter starts and its monster is known."""
+
+    encounter_uuid: str
+    monster: str
+    time_ms: int
+    zone: str
+
+
+@dataclass(frozen=True)
+class EncounterActivity:
+    """An action performed on a corpse during an encounter."""
+
+    encounter_uuid: str
+    activity: str  # "Looting" | "Skinning" | "Butchering" | "Extracting" | "Buried"
+    time_ms: int
+
+
+@dataclass(frozen=True)
+class EncounterEnd:
+    """An encounter ends and its end time is known."""
+
+    encounter_uuid: str
+    time_ms: int
+
+
+@dataclass(frozen=True)
 class LootDrop:
     time_ms: int
     source: str
@@ -221,6 +248,7 @@ class Correlator:
         self.sightings: deque[TargetSighting] = deque()
         self.sources: deque[SourceEvent] = deque()
         self.drops: list[LootDrop] = []
+        self.encounter_events: list[EncounterBegin | EncounterActivity | EncounterEnd] = []
 
         self.current_encounter_uuid: str = str(uuid.uuid4())
         self.current_monster: str | None = None
@@ -269,6 +297,8 @@ class Correlator:
     def ingest_bury(self, event: BuryEvent) -> None:
         # A bury ends the encounter: flush pending drops against the last monster.
         self._flush(event.time_ms)
+        self._note_activity("Buried", event.time_ms)
+        self._end_encounter(event.time_ms)
         self.current_encounter_uuid = str(uuid.uuid4())
         self.current_monster = None
         self.last_packet_time = event.time_ms
@@ -297,8 +327,14 @@ class Correlator:
         self._prune_sources()
 
         if not is_same_encounter:
-            self.current_encounter_uuid = str(uuid.uuid4())
-            self.current_monster = event.monster
+            self._end_encounter(event.time_ms)
+            self._begin_encounter(event.monster, event.time_ms)
+        if just_skinned:
+            self._note_activity("Skinning", event.time_ms)
+        elif just_butchered:
+            self._note_activity("Butchering", event.time_ms)
+        elif just_extracted:
+            self._note_activity("Extracting", event.time_ms)
 
         self.last_skin = event.can_skin
         self.last_butcher = event.can_butcher
@@ -313,8 +349,10 @@ class Correlator:
         if event.entity_id in self.entity_monsters:
             monster = self.entity_monsters[event.entity_id]
             if self.current_monster != monster:
-                self.current_encounter_uuid = str(uuid.uuid4())
-            self.current_monster = monster
+                self._end_encounter(event.time_ms)
+                self._begin_encounter(monster, event.time_ms)
+            else:
+                self.current_monster = monster
 
     def ingest_activity(self, event: ActivityEvent) -> None:
         """A chat status marker (e.g. ``You skin the corpse.``) pins a corpse action.
@@ -324,6 +362,7 @@ class Correlator:
         or after it is labeled regardless of which line was written first.
         """
         self._activity_hint = (event.activity, event.time_ms)
+        self._note_activity(event.activity, event.time_ms)
         self._flush(event.time_ms)
 
     def ingest_corpse_search(self, event: CorpseSearch) -> None:
@@ -356,9 +395,17 @@ class Correlator:
         self.killer = event.killer
         self.participants = event.participants
         if self.current_monster != event.monster:
-            self.current_encounter_uuid = str(uuid.uuid4())
+            self._end_encounter(event.time_ms)
+            self._begin_encounter(event.monster, event.time_ms)
+        else:
             self.current_monster = event.monster
         self.last_packet_time = event.time_ms
+        if just_skinned:
+            self._note_activity("Skinning", event.time_ms)
+        elif just_butchered:
+            self._note_activity("Butchering", event.time_ms)
+        elif just_extracted:
+            self._note_activity("Extracting", event.time_ms)
         self._flush(
             event.time_ms,
             just_skinned=just_skinned,
@@ -375,6 +422,14 @@ class Correlator:
         drops = list(self.drops)
         self.drops.clear()
         return drops
+
+    def take_encounter_events(
+        self,
+    ) -> list[EncounterBegin | EncounterActivity | EncounterEnd]:
+        """Return and clear every encounter record produced so far (for live streaming)."""
+        events = list(self.encounter_events)
+        self.encounter_events.clear()
+        return events
 
     def flush_expired(self, now_ms: int) -> list[LootDrop]:
         """Flush pending drops that failed to correlate within the buffer window.
@@ -426,6 +481,32 @@ class Correlator:
         return list(self.drops)
 
     # -- internal helpers ---------------------------------------------------------
+
+    def _begin_encounter(self, monster: str, time_ms: int) -> None:
+        """Roll a new encounter and emit its begin + looting records.
+
+        A frame or corpse search means the player opened the corpse dialogue,
+        which is looting performed.
+        """
+        self.current_encounter_uuid = str(uuid.uuid4())
+        self.current_monster = monster
+        self.encounter_events.append(
+            EncounterBegin(self.current_encounter_uuid, monster, time_ms, self.current_zone)
+        )
+        self.encounter_events.append(EncounterActivity(self.current_encounter_uuid, "Looting", time_ms))
+
+    def _note_activity(self, activity: str, time_ms: int) -> None:
+        """Record an action on the current encounter when a monster binds it.
+
+        An activity without a monster (e.g. a chat marker with no corpse
+        context) cannot be tied to an encounter and is dropped.
+        """
+        if self.current_monster is not None:
+            self.encounter_events.append(EncounterActivity(self.current_encounter_uuid, activity, time_ms))
+
+    def _end_encounter(self, time_ms: int) -> None:
+        if self.current_monster is not None:
+            self.encounter_events.append(EncounterEnd(self.current_encounter_uuid, time_ms))
 
     def _killer_json(self) -> str | None:
         if not self.participants:

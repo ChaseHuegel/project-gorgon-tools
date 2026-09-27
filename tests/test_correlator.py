@@ -545,3 +545,174 @@ def test_bury_clears_activity_hint() -> None:
         ],
     )
     assert drops[0].activity == "Looting"
+
+
+# --- encounter lifecycle records ---------------------------------------------
+
+
+def _events(c: Correlator) -> list:
+    events = c.take_encounter_events()
+    ids = {type(e).__name__ for e in events}
+    assert ids.issubset({"EncounterBegin", "EncounterActivity", "EncounterEnd"})
+    return events
+
+
+def _acts(events: list) -> list[str]:
+    return [e.activity for e in events if type(e).__name__ == "EncounterActivity"]
+
+
+def test_source_roll_emits_begin_with_looting() -> None:
+    c = Correlator()
+    _run(c, [("source", src(1.0, "Rat")), ("loot", loot(2.0, "Bone")), ("source", src(3.0, "Rat"))])
+    events = _events(c)
+    begins = [e for e in events if type(e).__name__ == "EncounterBegin"]
+    assert len(begins) == 1
+    assert begins[0].monster == "Rat"
+    assert begins[0].time_ms == make(1.0)
+    assert _acts(events) == ["Looting"]
+
+
+def test_skin_transition_emits_skinning_activity() -> None:
+    c = Correlator()
+    drops = _run(
+        c,
+        [
+            ("source", src(0.0, "Giant Bat", skin=True)),
+            ("loot", loot(0.5, "Bat Wing")),
+            ("source", src(1.0, "Giant Bat", skin=False)),
+        ],
+    )
+    events = _events(c)
+    assert _acts(events) == ["Looting", "Skinning"]
+    begin = next(e for e in events if type(e).__name__ == "EncounterBegin")
+    activities = [e for e in events if type(e).__name__ == "EncounterActivity"]
+    assert {a.encounter_uuid for a in activities} == {begin.encounter_uuid}
+    assert {drops[0].encounter_uuid} == {begin.encounter_uuid}
+
+
+def test_butcher_and_extract_transitions_emit_activities() -> None:
+    c = Correlator()
+    _run(
+        c,
+        [
+            ("source", src(0.0, "Boar", butcher=True)),
+            ("source", src(1.0, "Boar", extract=True)),
+            ("source", src(2.0, "Boar")),
+        ],
+    )
+    assert set(_acts(_events(c))) == {"Looting", "Butchering", "Extracting"}
+    assert _acts(c.take_encounter_events()) == []
+
+
+def test_bury_emits_buried_and_end_on_same_encounter() -> None:
+    c = Correlator()
+    _run(c, [("source", src(1.0, "Rat")), ("bury", BuryEvent(time_ms=make(2.0)))])
+    events = _events(c)
+    assert _acts(events) == ["Looting", "Buried"]
+    ends = [e for e in events if type(e).__name__ == "EncounterEnd"]
+    assert len(ends) == 1
+    assert ends[0].time_ms == make(2.0)
+
+
+def test_bury_without_monster_emits_no_records() -> None:
+    c = Correlator()
+    _run(c, [("bury", BuryEvent(time_ms=make(1.0)))])
+    assert _events(c) == []
+
+
+def test_chat_marker_emits_activity_bound_to_encounter() -> None:
+    c = Correlator(activity_window_seconds=2.0)
+    _run(
+        c,
+        [
+            ("source", src(1.0, "Boar")),
+            ("loot", loot(3.0, "Pork")),
+            ("activity", ActivityEvent(time_ms=make(4.0), activity="Butchering")),
+        ],
+    )
+    events = _events(c)
+    assert _acts(events) == ["Looting", "Butchering"]
+    begin = next(e for e in events if type(e).__name__ == "EncounterBegin")
+    assert all(e.encounter_uuid == begin.encounter_uuid for e in events)
+
+
+def test_chat_marker_without_monster_emits_no_activity() -> None:
+    c = Correlator(activity_window_seconds=2.0)
+    _run(c, [("activity", ActivityEvent(time_ms=make(1.0), activity="Skinning"))])
+    assert _events(c) == []
+
+
+def test_monster_change_ends_and_begins_encounters() -> None:
+    c = Correlator()
+    _run(
+        c,
+        [
+            ("source", src(0.0, "Rat")),
+            ("source", src(5.0, "Rat")),  # session timeout -> new encounter
+            ("source", src(6.0, "Wolf")),  # monster change
+        ],
+    )
+    events = _events(c)
+    begins = [e for e in events if type(e).__name__ == "EncounterBegin"]
+    ends = [e for e in events if type(e).__name__ == "EncounterEnd"]
+    assert [b.monster for b in begins] == ["Rat", "Rat", "Wolf"]
+    assert len(ends) == 2
+    assert [e.encounter_uuid for e in ends] == [begins[0].encounter_uuid, begins[1].encounter_uuid]
+
+
+def test_corpse_search_begin_and_new_verb_activities() -> None:
+    c = Correlator(activity_window_seconds=2.0)
+    drops = _run(
+        c,
+        [
+            ("interaction", InteractionStart(time_ms=make(1.0), entity_id=501)),
+            ("corpse", _corpse(2.0, "Giant Bat", 501)),
+            ("loot", loot(3.0, "Bat Wing")),
+            ("corpse", _corpse(4.0, "Giant Bat", 501, {"skinned": "Bat Wing"})),
+        ],
+    )
+    events = _events(c)
+    assert _acts(events) == ["Looting", "Skinning"]
+    assert drops[0].activity == "Skinning"
+
+
+def test_corpse_first_seen_skinned_emits_no_skinning_activity() -> None:
+    c = Correlator(activity_window_seconds=2.0)
+    _run(
+        c,
+        [
+            ("interaction", InteractionStart(time_ms=make(1.0), entity_id=501)),
+            ("corpse", _corpse(4.0, "Giant Bat", 501, {"skinned": "Bat Wing"})),
+        ],
+    )
+    assert "Skinning" not in _acts(_events(c))
+
+
+def test_corpse_unchanged_verb_emits_no_second_activity() -> None:
+    c = Correlator(activity_window_seconds=2.0)
+    _run(
+        c,
+        [
+            ("interaction", InteractionStart(time_ms=make(1.0), entity_id=501)),
+            ("corpse", _corpse(2.0, "Giant Bat", 501, {"skinned": "Bat Wing"})),
+            ("corpse", _corpse(4.0, "Giant Bat", 501, {"skinned": "Bat Wing"})),
+        ],
+    )
+    acts = _acts(_events(c))
+    assert acts.count("Skinning") == 0  # never fresh on this corpse
+
+def test_interaction_restore_rolls_begin_for_known_entity() -> None:
+    c = Correlator()
+    drops = _run(
+        c,
+        [
+            ("corpse", _corpse(1.0, "Wolf", 701)),
+            ("interaction", InteractionStart(time_ms=make(2.0), entity_id=701)),
+            ("corpse", _corpse(3.0, "Wolf", 701)),
+        ],
+    )
+    events = _events(c)
+    begins = [e for e in events if type(e).__name__ == "EncounterBegin"]
+    assert [b.monster for b in begins] == ["Wolf"]
+    assert _acts(events) == ["Looting"]
+    assert drops == []
