@@ -78,6 +78,7 @@ class CorpseSearch:
     killer: str | None = None
     participants: dict[str, dict[str, int | float]] | None = None  # name -> {"health","armor","aggro"}
     extractions: dict[str, str] | None = None  # action -> item
+    reward_items: list[str] | None = None  # obtained by the local player's own action
 
 
 @dataclass(frozen=True)
@@ -392,6 +393,20 @@ class Correlator:
         just_skinned = seen_before and "skinned" in new_extra and "skinned" not in prev_extra
         just_butchered = seen_before and "butchered" in new_extra and "butchered" not in prev_extra
         just_extracted = seen_before and "extracted" in new_extra and "extracted" not in prev_extra
+        reward_tokens = (
+            {_token(name) for name in event.reward_items} if event.reward_items else None
+        )
+        if event.reward_items:
+            # The reward screen names the local player's own just-performed
+            # skinning/butchering/extracting action (``Mennelaia skinned the
+            # corpse ... and obtained ...``), so it is the fresh-action signal
+            # itself, independent of whether a prior search recorded the verb.
+            if "skinned" in new_extra:
+                just_skinned = True
+            if "butchered" in new_extra:
+                just_butchered = True
+            if "extracted" in new_extra:
+                just_extracted = True
         self.killer = event.killer
         self.participants = event.participants
         if self.current_monster != event.monster:
@@ -412,6 +427,7 @@ class Correlator:
             just_butchered=just_butchered,
             just_extracted=just_extracted,
             activity_window_s=self.activity_window_seconds,
+            reward_tokens=reward_tokens,
         )
 
     def note_item_code(self, event: ItemCode) -> None:
@@ -742,6 +758,7 @@ class Correlator:
         just_butchered: bool = False,
         just_extracted: bool = False,
         activity_window_s: float | None = None,
+        reward_tokens: set[str] | None = None,
     ) -> None:
         # Packet can_skin/butcher/extract transitions keep the legacy 0.9s retro
         # window; corpse-description transitions (whole-second Player.log stamps)
@@ -758,7 +775,14 @@ class Correlator:
 
             if monster_lag <= self.buffer_seconds and monster_lag < orphan_lag:
                 activity = "Looting"
-                if just_skinned and monster_lag <= window_s:
+                # When reward_tokens is set (a player's own skinning/butchering
+                # reward named on the corpse-search screen), only the reward
+                # items inherit the verb; other corpse loot in the same window
+                # (e.g. Stomach alongside skins) stays ``Looting``.
+                in_reward = reward_tokens is not None and _token(fact.item) in reward_tokens
+                if reward_tokens is not None and not in_reward:
+                    activity = "Looting"
+                elif just_skinned and monster_lag <= window_s:
                     activity = "Skinning"
                 elif just_butchered and monster_lag <= window_s:
                     activity = "Butchering"

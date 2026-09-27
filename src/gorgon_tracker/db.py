@@ -83,9 +83,10 @@ ALTER TABLE items ADD COLUMN data_version TEXT;
 """
 
 # v5: corpse-description audit trail. The corpse-search talk screen names the
-# items taken by each action ("Mennelaia skinned a Pelt from the corpse."); those
-# verb/item pairs drive Skinning/Butchering/Extracting attribution, so they are
-# retained alongside the killer for review and debugging.
+# items taken by each action ("Mennelaia skinned a Pelt from the corpse." or
+# "Mennelaia skinned the corpse ... and obtained Decent Animal Skin x2 plus Crude
+# Animal Skin"); those verb/item pairs drive Skinning/Butchering/Extracting
+# attribution, so they are retained alongside the killer for review and debugging.
 _MIGRATION_V5_SQL = """
 ALTER TABLE corpse_searches ADD COLUMN extractions_json TEXT NOT NULL DEFAULT '{}';
 """

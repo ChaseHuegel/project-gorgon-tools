@@ -49,10 +49,11 @@ LocalPlayer: ProcessTalkScreen(996594, "Search Corpse of Goblin Horsebeater", ".
 - `ProcessStartInteraction(<eid>, ...)` opens a looting window (emits `InteractionStart`), flushing any prior window (`playerlog.py:218-222`).
 - `ProcessTalkScreen(<eid>, "Search Corpse of <monster>", ...)` opens a corpse search (emits `CorpseSearch` with killer and participants, `playerlog.py:224-246`).
 - The talk-screen details body can include:
-  - Killer: `<em>Killer:</em> <name>` (`KILLER_RE`, playerlog.py:54).
-  - Damage table: `<name>: <n> health dmg[ <n2> armor dmg]. Aggro (at death): <pct>%` (`PARTICIPANT_RE`, playerlog.py:55-56).
-  - Extractions: `<name> <verb> <item> from the corpse` where verb is `extracted|skinned|butchered|harvested` (`EXTRACT_RE`, playerlog.py:58).
-- Unity escapes real newlines as literal `\n` inside the logged text. `_parse_talk_details` unescapes them first (`playerlog.py:272-293`).
+  - Killer: `<em>Killer:</em> <name>` (`KILLER_RE`, playerlog.py:58).
+  - Damage table: `<name>: <n> health dmg[ <n2> armor dmg]. Aggro (at death): <pct>%` (`PARTICIPANT_RE`, playerlog.py:59-61).
+  - Extractions: `<name> <verb> <item> from the corpse` where verb is `extracted|skinned|butchered|harvested` (`EXTRACT_RE`, playerlog.py:62).
+  - Reward: `<name> <verb> the corpse (...) and obtained <item> x2 plus <item>` where verb is `skinned|butchered|extracted` (`REWARD_RE`, playerlog.py:63). This form names the local player's own action and the items it granted. `EXTRACT_RE` handles pre-existing corpse state; `REWARD_RE` handles the local player's fresh action.
+- Unity escapes real newlines as literal `\n` inside the logged text. `_parse_talk_details` unescapes them first (`playerlog.py:307-335`).
 
 ### Errors and screen text
 
@@ -80,7 +81,9 @@ One `_Window` tracks the open corpse interaction (`playerlog.py:82-88`):
 - `removals`: iids removed off the corpse (`ProcessRemoveLoot`) not yet confirmed in inventory.
 - `collected`: iids seen in both `RemoveLoot` and a pickup.
 
-At window close (new interaction, corpse search, error, or bury), every iid still in `removals` emits a missed `LootEvent`. `parser.close()` flushes the trailing window at end of stream (`playerlog.py:248-266`).
+At window close (new interaction, corpse search, error, or bury), every iid still in `removals` emits a missed `LootEvent`. `parser.close()` flushes the trailing window at end of stream (`playerlog.py:282-297`).
+
+A skinning/butchering/extracting reward does not stock items through a corpse-window pickup. Instead the game reports one `ProcessRemoveLoot` per reward bundle, and the items reach inventory by way of the talk-screen reward text and the chat `added to inventory.` lines. Because that `ProcessRemoveLoot` never meets a matching pickup, the plain rule would emit a false `Unknown (Missed)` row for a reward the player actually collected. When a corpse search carries a fresh reward for the same corpse, `_close_window(... suppress_missed=True)` drops those unmatched removals instead of emitting them (`playerlog.py:252-280`).
 
 ## Source of truth and tests
 

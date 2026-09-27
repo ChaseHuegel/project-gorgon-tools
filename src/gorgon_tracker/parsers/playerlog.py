@@ -60,6 +60,7 @@ PARTICIPANT_RE = re.compile(
     r"\s*([^:\n]+):\s*(\d+) health dmg(?: (\d+) armor dmg)?\.\s*Aggro \(at death\):\s*([\d.]+)%?"
 )
 EXTRACT_RE = re.compile(r"\s*(\S+) (extracted|skinned|butchered|harvested) (.+?) from the corpse\b")
+REWARD_RE = re.compile(r"\s*(\S+) (skinned|butchered|extracted) the corpse\b.*?\band obtained (?P<items>[^\"().]+)")
 ERROR_MESSAGE_RE = re.compile(r'LocalPlayer: ProcessErrorMessage\((InventoryFull),\s*"[^"]*"\)')
 SCREEN_TEXT_RE = re.compile(
     r'LocalPlayer: ProcessScreenText\((GeneralInfo|CombatInfo),\s*"(?P<msg>[^"]*)"\)'
@@ -189,8 +190,10 @@ class PlayerLogParser:
         if m := START_INTERACTION_RE.search(line):
             return self._open_interaction(int(m["eid"]), time_ms)
         if m := TALK_SCREEN_TITLE_RE.search(line):
-            killer, participants, activities = _parse_talk_details(line)
-            return self._open_corpse_search(int(m["eid"]), m["title"], killer, participants, activities, time_ms)
+            killer, participants, activities, reward_items = _parse_talk_details(line)
+            return self._open_corpse_search(
+                int(m["eid"]), m["title"], killer, participants, activities, reward_items, time_ms
+            )
         if ERROR_MESSAGE_RE.search(line):
             return self._close_window(time_ms)
         if screen := SCREEN_TEXT_RE.search(line):
@@ -248,11 +251,21 @@ class PlayerLogParser:
         killer: str | None,
         participants: dict[str, dict[str, int | float]],
         activities: dict[str, str],
+        reward_items: list[str] | None,
         time_ms: int,
     ) -> list[object]:
-        events = self._close_window(time_ms)
+        # A reward screen ("<you> skinned the corpse ... and obtained <items>")
+        # is the local player's own skinning/butchering action. Its items were
+        # collected via the reward path, not stocked through a ProcessAddItem in
+        # the loot window, so the window's unmatched removals are those rewards,
+        # not inventory-full losses. Suppress the phantom missed emission.
+        reward_same_corpse = bool(reward_items) and bool(
+            self._window and self._window.entity_id == entity_id
+        )
+        expected = self._close_window(time_ms, suppress_missed=reward_same_corpse)
         monster = title.removeprefix("Search Corpse of ").strip()
         self._window = _Window(entity_id=entity_id)
+        events = expected
         events.append(
             CorpseSearch(
                 time_ms=time_ms,
@@ -261,27 +274,29 @@ class PlayerLogParser:
                 killer=killer,
                 participants=participants,
                 extractions=activities,
+                reward_items=reward_items,
             )
         )
         return events
 
-    def _close_window(self, time_ms: int) -> list[object]:
+    def _close_window(self, time_ms: int, suppress_missed: bool = False) -> list[object]:
         """Emit missed-loot for removals that never reached inventory."""
         if self._window is None:
             return []
         events: list[object] = []
-        for iid in sorted(self._window.removals):
-            events.append(
-                LootEvent(
-                    time_ms=time_ms,
-                    item="Unknown",
-                    amount=1,
-                    instance_id=iid,
-                    entity_id=self._window.entity_id,
-                    source_class="unity",
-                    missed=True,
+        if not suppress_missed:
+            for iid in sorted(self._window.removals):
+                events.append(
+                    LootEvent(
+                        time_ms=time_ms,
+                        item="Unknown",
+                        amount=1,
+                        instance_id=iid,
+                        entity_id=self._window.entity_id,
+                        source_class="unity",
+                        missed=True,
+                    )
                 )
-            )
         self._window = None
         return events
 
@@ -291,7 +306,15 @@ class PlayerLogParser:
 
 def _parse_talk_details(
     line: str,
-) -> tuple[str | None, dict[str, dict[str, int | float]], dict[str, str]]:
+) -> tuple[str | None, dict[str, dict[str, int | float]], dict[str, str], list[str] | None]:
+    """Parse a corpse-search talk screen into killer, participants, activities, reward items.
+
+    The screen may carry one of two action descriptions:
+    * ``<name> extracted <item> from the corpse.`` (any corpse's pre-existing state);
+    * ``<name> <verb> the corpse (...) and obtained <item> xN plus <item>`` — the
+      local player's own skinning/butchering reward, whose item names we return so
+      the correlator can label drops per item.
+    """
     # Unity escapes real newlines as literal backslash-n inside the logged text.
     line = line.replace("\\n", "\n")
     killer = None
@@ -308,9 +331,18 @@ def _parse_talk_details(
             "aggro": float(match.group(4)),
         }
     activities: dict[str, str] = {}
+    reward_items: list[str] | None = None
+    for match in REWARD_RE.finditer(line):
+        verb = match.group(2)
+        items_text = match.group("items").strip()
+        activities[verb] = items_text
+        names = [p.strip() for p in items_text.split(" plus ") if p.strip()]
+        reward_items = [re.sub(r"\s+x\d+$", "", n) for n in names]
     for match in EXTRACT_RE.finditer(line):
-        activities[match.group(2)] = match.group(3).strip()
-    return killer, participants, activities
+        # The named-from-the-corpse form only fires when no reward form matched.
+        if match.group(2) not in activities:
+            activities[match.group(2)] = match.group(3).strip()
+    return killer, participants, activities, reward_items
 
 
 def parse_player_log_lines(lines: Iterator[str], parser: PlayerLogParser | None = None) -> Iterator[object]:

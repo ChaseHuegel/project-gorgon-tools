@@ -125,6 +125,42 @@ def test_corpse_search_parses_skinned_and_butchered() -> None:
     assert searches[0].extractions == {"skinned": "a Pelt", "butchered": "Pork"}
 
 
+def test_reward_line_parses_own_skinning_action() -> None:
+    """A ``... skinned the corpse ... and obtained <items>`` line names the player's own reward."""
+    body = (
+        "\\n<em>Killer:</em> Tester\\n\\nTester skinned the corpse (with a +12 skill bonus from "
+        "equipment) and obtained Decent Animal Skin x2 plus Crude Animal Skin"
+    )
+    line = (
+        '[20:00:01] LocalPlayer: ProcessTalkScreen(1001, "Search Corpse of Ferocious Wolf", '
+        f'"{body}", "", [], System.String[], 1, Corpse)'
+    )
+    events = run([LOGIN, line])
+    searches = [e for e in events if isinstance(e, CorpseSearch)]
+    assert len(searches) == 1
+    assert searches[0].extractions == {"skinned": "Decent Animal Skin x2 plus Crude Animal Skin"}
+    assert searches[0].reward_items == ["Decent Animal Skin", "Crude Animal Skin"]
+
+
+def test_reward_window_suppresses_phantom_missed_loot() -> None:
+    """A skinning reward's lone ``ProcessRemoveLoot`` is not a missed (inventory-full) loot."""
+    events = run(
+        [
+            LOGIN,
+            '[20:00:01] LocalPlayer: ProcessStartInteraction(1001, 13.5, 0, False, "")',
+            '[20:00:02] LocalPlayer: ProcessTalkScreen(1001, "Search Corpse of Ferocious Wolf", '
+            '"\\n<em>Killer:</em> Tester\\n", "", [], System.String[], 0, Corpse)',
+            "[20:00:03] LocalPlayer: ProcessRemoveLoot(-1717477658)",
+            '[20:00:04] LocalPlayer: ProcessTalkScreen(1001, "Search Corpse of Ferocious Wolf", '
+            '"\\n<em>Killer:</em> Tester\\n\\nTester skinned the corpse (with a +12 skill bonus '
+            'from equipment) and obtained Decent Animal Skin x2 plus Crude Animal Skin", '
+            '"", [], System.String[], 1, Corpse)',
+            '[20:00:05] LocalPlayer: ProcessScreenText(GeneralInfo, "You bury the corpse.")',
+        ]
+    )
+    assert not any(e for e in events if isinstance(e, LootEvent) and e.missed)
+
+
 def test_corpse_window_marked_missed_when_remove_loot_unmatched() -> None:
     events = run(
         [

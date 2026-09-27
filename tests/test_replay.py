@@ -169,6 +169,45 @@ def test_replay_attributes_corpse_description_skinning(tmp_path: Path) -> None:
     conn.close()
 
 
+def test_replay_reward_marks_only_skins_and_no_phantom(tmp_path: Path) -> None:
+    """A skinning reward labels only the named skins; other corpse loot stays Looting."""
+    playerlog = tmp_path / "Player.log"
+    playerlog.write_text(
+        "\n".join(
+            [
+                "[20:00:00] Logged in as character Tester. Time UTC=01/11/2026 20:00:00. "
+                "Timezone Offset -01:00:00.",
+                '[20:00:01] LocalPlayer: ProcessStartInteraction(501, 13.5, 0, False, "")',
+                "[20:00:02] LocalPlayer: ProcessAddItem(Stomach(-1), -1, True)",
+                '[20:00:03] LocalPlayer: ProcessTalkScreen(501, "Search Corpse of Ferocious Wolf", '
+                '"\\n<em>Killer:</em> Tester\\n", "", [], System.String[], 0, Corpse)',
+                "[20:00:04] LocalPlayer: ProcessAddItem(DecentAnimalSkin(-2), -1, True)",
+                "[20:00:04] LocalPlayer: ProcessAddItem(CrudeAnimalSkin(-3), -1, True)",
+                "[20:00:04] LocalPlayer: ProcessRemoveLoot(-4)",
+                '[20:00:05] LocalPlayer: ProcessTalkScreen(501, "Search Corpse of Ferocious Wolf", '
+                '"\\n<em>Killer:</em> Tester\\n\\nTester skinned the corpse (with a +12 skill bonus '
+                'from equipment) and obtained Decent Animal Skin x2 plus Crude Animal Skin", '
+                '"", [], System.String[], 1, Corpse)',
+                '[20:00:06] LocalPlayer: ProcessScreenText(GeneralInfo, "You bury the corpse.")',
+            ]
+        )
+        + "\n"
+    )
+    conn = _connect(tmp_path)
+    stats = run_replay(conn, TrackerConfig(), expand_inputs([playerlog]))
+    assert stats["loot_kept"] == 3
+    rows = conn.execute("SELECT item, amount, activity FROM loot_drops ORDER BY captured_at").fetchall()
+    assert [(r["item"], r["activity"]) for r in rows] == [
+        ("Stomach", "Looting"),
+        ("Decent Animal Skin", "Skinning"),
+        ("Crude Animal Skin", "Skinning"),
+    ]
+    # The lone reward remove-loot must not surface as a phantom missed Unknown.
+    unknown = conn.execute("SELECT COUNT(*) c FROM loot_drops WHERE item = 'Unknown'").fetchone()
+    assert unknown["c"] == 0
+    conn.close()
+
+
 def test_replay_chat_activity_markers_label_drops(tmp_path: Path) -> None:
     """A ``You butcher the corpse.`` status line labels the nearby pickup."""
     chat = tmp_path / "chatsession.log"

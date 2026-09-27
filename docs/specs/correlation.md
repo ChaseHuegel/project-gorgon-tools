@@ -56,7 +56,8 @@ All rules implemented in `src/gorgon_tracker/correlator.py:277-464`.
 ### Interaction and corpse search
 
 - `ingest_interaction` opens a loot window. If the entity id maps to a known monster, it restores that monster context.
-- `ingest_corpse_search` records the monster by entity id. The corpse-description extractions (`skinned/butchered/extracted <item> from the corpse`) drive activity: a verb that newly appears on a previously-seen corpse flushes pending loot as that activity and records it on the encounter. A corpse first seen already showing the verb, or re-searched unchanged, never relabels or records (`correlator.py:368-407`).
+- `ingest_corpse_search` records the monster by entity id. The corpse-description extractions (`skinned/butchered/extracted <item> from the corpse`) drive activity: a verb that newly appears on a previously-seen corpse flushes pending loot as that activity and records it on the encounter. A corpse first seen already showing the verb, or re-searched unchanged, never relabels or records (`correlator.py:369-391`).
+- The local player's own action arrives as the reward form (`<you> skinned/butchered/extracted the corpse (...) and obtained <items>`, parsed by `REWARD_RE` in `playerlog.py:63`). The reward names the items it granted (`reward_items`), so it is the fresh-action signal itself: it relabels without needing a prior search (`correlator.py:399-409`). The attribution is per item: only the named reward items inherit the verb, and other corpse loot in the same window (for example Stomach alongside skins) stays `Looting` (`correlator.py:782-792`).
 
 ### Chat activity marker
 

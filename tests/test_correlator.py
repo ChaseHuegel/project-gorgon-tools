@@ -428,12 +428,13 @@ def test_missed_loot_is_flagged_missed() -> None:
 # --- corpse-description activity transitions (Unity Player.log) ----------------
 
 
-def _corpse(sec: float, monster: str, entity_id: int, extractions=None) -> CorpseSearch:
+def _corpse(sec: float, monster: str, entity_id: int, extractions=None, reward_items=None) -> CorpseSearch:
     return CorpseSearch(
         time_ms=make(sec),
         monster=monster,
         entity_id=entity_id,
         extractions=extractions or {},
+        reward_items=reward_items,
     )
 
 
@@ -496,6 +497,57 @@ def test_corpse_repeated_skinned_state_stays_looting() -> None:
         ],
     )
     assert drops[0].activity == "Looting"
+
+
+def test_reward_marks_only_reward_items_skinning() -> None:
+    """A skinning reward only relabels the named skins; other corpse loot stays Looting."""
+    c = Correlator(activity_window_seconds=2.0)
+    drops = _run(
+        c,
+        [
+            ("interaction", InteractionStart(time_ms=make(1.0), entity_id=501)),
+            ("corpse", _corpse(2.0, "Ferocious Wolf", 501)),
+            ("loot", loot(4.0, "Stomach")),
+            ("loot", loot(4.0, "Decent Animal Skin")),
+            ("loot", loot(4.0, "Crude Animal Skin")),
+            (
+                "corpse",
+                _corpse(
+                    4.0,
+                    "Ferocious Wolf",
+                    501,
+                    {"skinned": "Decent Animal Skin x2 plus Crude Animal Skin"},
+                    reward_items=["Decent Animal Skin", "Crude Animal Skin"],
+                ),
+            ),
+        ],
+    )
+    assert [d.activity for d in drops] == ["Looting", "Skinning", "Skinning"]
+    assert [d.item for d in drops] == ["Stomach", "Decent Animal Skin", "Crude Animal Skin"]
+    assert not any(d for d in drops if d.item == "Unknown")
+
+
+def test_reward_first_search_still_marks_skinning() -> None:
+    """A reward on the first corpse search is the player's own action, so skinning applies."""
+    c = Correlator(activity_window_seconds=2.0)
+    drops = _run(
+        c,
+        [
+            ("interaction", InteractionStart(time_ms=make(1.0), entity_id=501)),
+            ("loot", loot(3.0, "Bat Wing")),
+            (
+                "corpse",
+                _corpse(
+                    4.0,
+                    "Giant Bat",
+                    501,
+                    {"skinned": "Bat Wing"},
+                    reward_items=["Bat Wing"],
+                ),
+            ),
+        ],
+    )
+    assert drops[0].activity == "Skinning"
 
 
 # --- chat status activity markers ---------------------------------------------
