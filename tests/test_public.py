@@ -246,3 +246,48 @@ def test_build_public_app_requires_token_when_ingest_enabled(tmp_path: Path) -> 
     _write_cfg(cfg, {"serve": {"ingest_enabled": True, "ingest_token": ""}})
     with pytest.raises(ValueError):
         public.build_public_app(str(db_path), str(cfg))
+
+
+def test_read_only_serve_survives_duplicate_capture_drops(tmp_path: Path) -> None:
+    """A local capture DB may hold duplicate natural keys. Read-only serve must launch."""
+    db_path = tmp_path / "capture.db"
+    conn = db.connect(db_path)
+    db.migrate(conn)
+    session_id = db.new_session(conn, platform="linux")
+    import gorgon_tracker.db as db_mod
+
+    db_mod.insert_loot_drop(
+        conn, session_id, None, 1_000, "Giant Bat", "Bat Guano", 1, "Looting", "Old Graveyard", "Linked", 0
+    )
+    db_mod.insert_loot_drop(
+        conn, session_id, None, 1_000, "Giant Bat", "Bat Guano", 1, "Looting", "Old Graveyard", "Linked", 0
+    )
+    conn.commit()
+    conn.close()
+
+    spa = tmp_path / "no-spa"
+    app = TestClient(public.build_public_app(str(db_path), None, static_dir=spa))
+    assert app.get("/api/health").json()["status"] == "ok"
+    assert len(app.get("/api/loot").json()) == 2
+
+
+def test_ingest_enabled_refuses_duplicate_capture_db(tmp_path: Path) -> None:
+    db_path = tmp_path / "capture.db"
+    conn = db.connect(db_path)
+    db.migrate(conn)
+    session_id = db.new_session(conn, platform="linux")
+    import gorgon_tracker.db as db_mod
+
+    db_mod.insert_loot_drop(
+        conn, session_id, None, 1_000, "Giant Bat", "Bat Guano", 1, "Looting", "Old Graveyard", "Linked", 0
+    )
+    db_mod.insert_loot_drop(
+        conn, session_id, None, 1_000, "Giant Bat", "Bat Guano", 1, "Looting", "Old Graveyard", "Linked", 0
+    )
+    conn.commit()
+    conn.close()
+
+    cfg = tmp_path / "serve.toml"
+    _write_cfg(cfg, {"serve": {"ingest_enabled": True, "ingest_token": "sekret"}})
+    with pytest.raises(ValueError, match="duplicate"):
+        public.build_public_app(str(db_path), str(cfg), static_dir=tmp_path / "no-spa")

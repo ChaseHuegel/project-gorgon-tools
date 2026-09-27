@@ -56,7 +56,7 @@ link rows without an encounter.
 
 - Body: `{"rows": [<payload>, ...]}` with 1..500 rows.
 - Auth: `Authorization: Bearer <token>`. The token must equal `[serve] ingest_token`.
-- Natural-key upsert: the new payload **replaces** a public row with the same `(captured_at, source, item, amount)`. Otherwise the server inserts a new row. The unique indexes `idx_loot_drops_publish_key` and `idx_encounters_publish_uuid` exist only on the public database. They never exist on the local capture DB.
+- Natural-key upsert: the new payload **replaces** a public row with the same `(captured_at, source, item, amount)`. Otherwise the server inserts a new row. The server creates the unique indexes `idx_loot_drops_publish_key` and `idx_encounters_publish_uuid` only when the ingest endpoint is enabled. They never exist on the local capture DB.
 - Response: `{received, created, replaced, actions: ["created"|"replaced", ...]}`
   where `actions` is parallel to the submitted `rows`.
 

@@ -111,7 +111,7 @@ All modules in `src/gorgon_tracker/`.
 - Tables: `sessions`, `raw_events`, `sources`, `loot`, `burials`, `target_sightings`, `zone_changes`, `encounters`, `loot_drops`, `loot_overrides`, `corpse_searches`, `items`, `loot_publications`, `schema_migrations`.
 - Views: `v_sessions`, `v_summary`, `v_drop_rates` (see `docs/specs/correlation.md` for rates semantics).
 - `items` is preseeded from the catalog when empty (`seed_from_catalog`); canonical names never overwrite learned ones.
-- **Public database** (`serve`): same schema, plus two indexes. The server creates both only on the public DB (`public.py:ensure_published_schema`). `idx_loot_drops_publish_key(captured_at, source, item, amount)` supports the natural-key upsert. `idx_encounters_publish_uuid` supports encounter reconstruction. Published rows attach to one synthetic `sessions.uuid = 'published'` row, so all read queries and SSE streams work unchanged.
+- **Public database** (`serve`): same schema. When the ingest endpoint is enabled (`[serve] ingest_enabled`), the server adds two indexes on the ingest DB (`public.py:ensure_published_schema`). `idx_loot_drops_publish_key(captured_at, source, item, amount)` supports the natural-key upsert. `idx_encounters_publish_uuid` supports encounter reconstruction. Published rows attach to one synthetic `sessions.uuid = 'published'` row, so all read queries and SSE streams work unchanged.
 
 ## CLI commands
 

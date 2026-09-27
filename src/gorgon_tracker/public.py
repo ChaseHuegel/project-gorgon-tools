@@ -16,6 +16,7 @@ replaces the public copy. See ``docs/specs/publish.md``.
 from __future__ import annotations
 
 import secrets
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -50,24 +51,34 @@ class IngestBody(BaseModel):
     rows: list[dict[str, Any]]
 
 
-def ensure_published_schema(db_path: str) -> None:
-    """Migrate the public DB, seed the catalog, and add the publish constraints.
+def ensure_published_schema(db_path: str, *, publish_indexes: bool = False) -> None:
+    """Migrate the DB, seed the catalog, and (optionally) add publish constraints.
 
-    The unique indexes on the publish natural key and on ``encounters.uuid``
-    exist only on the public database; the local capture DB keeps the shared
-    schema untouched so it can record duplicate same-second drops.
+    The unique index on the publish natural key makes the ingest upsert
+    well-defined. It exists only on the ingest database, so ``publish_indexes``
+    is true only when ``serve`` has ingest enabled. A plain read-only ``serve``
+    (the default) must work against any gorgon-tracker database, including a
+    local capture DB that records duplicate same-second drops.
     """
     conn = db_mod.connect(db_path)
     try:
         db_mod.migrate(conn)
         db_mod.seed_from_catalog(conn)
-        conn.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_loot_drops_publish_key"
-            " ON loot_drops(captured_at, source, item, amount)"
-        )
-        conn.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_encounters_publish_uuid ON encounters(encounter_uuid)"
-        )
+        if not publish_indexes:
+            return
+        try:
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_loot_drops_publish_key"
+                " ON loot_drops(captured_at, source, item, amount)"
+            )
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_encounters_publish_uuid ON encounters(encounter_uuid)"
+            )
+        except sqlite3.IntegrityError as exc:
+            raise ValueError(
+                "the ingest database already contains duplicate (captured_at, source, item, amount) rows. "
+                "Point serve at an empty public database and plain local capture DB for staging."
+            ) from exc
         conn.commit()
     finally:
         conn.close()
@@ -241,7 +252,7 @@ def build_public_app(
         if not cfg.serve.ingest_token:
             raise ValueError("serve.ingest_enabled requires serve.ingest_token")
         app.include_router(build_ingest_router(db_path, cfg.serve.ingest_token))
-    ensure_published_schema(db_path)
+    ensure_published_schema(db_path, publish_indexes=cfg.serve.ingest_enabled)
     if spa_dir.is_dir():
         mount_spa(app, spa_dir)
     return app
