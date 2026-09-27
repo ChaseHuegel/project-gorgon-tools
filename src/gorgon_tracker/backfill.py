@@ -123,6 +123,41 @@ def _existing_drop_times(conn: sqlite3.Connection, session_id: int) -> dict[int,
     return times
 
 
+def _derive_legacy_ledger(conn: sqlite3.Connection, session_id: int) -> int:
+    """Derive the activity ledger from loot drops when no corpse events exist.
+
+    Legacy-migrated sessions wrote loot rows that already carry monster,
+    activity, and encounter identity. Their raw events have no corpse-search
+    frames, so the correlator replay cannot see encounters. The drops are the
+    only evidence: each distinct drop activity on an encounter becomes one
+    ledger row at the earliest drop time. Skinned corpses that yielded no loot
+    are unknowable in legacy data.
+    """
+    with conn:
+        for row in conn.execute(
+            "SELECT encounter_id, zone, MIN(captured_at) AS first_at, MAX(captured_at) AS last_at"
+            " FROM loot_drops WHERE session_id = ? AND encounter_id IS NOT NULL"
+            " GROUP BY encounter_id",
+            (session_id,),
+        ):
+            conn.execute(
+                "UPDATE encounters SET"
+                " ended_at = MAX(COALESCE(ended_at, ?), ?),"
+                " zone = CASE WHEN zone = 'Unknown' THEN ? ELSE zone END"
+                " WHERE id = ?",
+                (row["first_at"], row["last_at"], row["zone"], row["encounter_id"]),
+            )
+        cursor = conn.execute(
+            "INSERT OR IGNORE INTO encounter_activities"
+            " (session_id, encounter_id, activity, performed_at)"
+            " SELECT session_id, encounter_id, activity, MIN(captured_at)"
+            " FROM loot_drops WHERE session_id = ? AND encounter_id IS NOT NULL"
+            " GROUP BY encounter_id, activity",
+            (session_id,),
+        )
+        return int(cursor.rowcount)
+
+
 def backfill_session(conn: sqlite3.Connection, session_id: int) -> dict[str, int]:
     """Rebuild the encounter ledger for one session; returns result counts."""
     snapshot_row = conn.execute(
@@ -208,38 +243,60 @@ def backfill_session(conn: sqlite3.Connection, session_id: int) -> dict[str, int
     created = 0
     matched = 0
     activity_count = 0
-    with conn:
-        for uuid, begin in begins.items():
-            key = (begin.monster, tuple(rebuilt_drops.get(uuid, [])))
-            encounter_id = existing_by_times.get(key)
-            if encounter_id is None and not rebuilt_drops.get(uuid):
-                encounter_id = existing_by_start.get((begin.monster, begin.zone, begin.time_ms))
-            if encounter_id is None:
-                encounter_id = db.insert_encounter(
-                    conn,
-                    session_id,
-                    uuid,
-                    begin.monster,
-                    begin.time_ms,
-                    ended_at=ends.get(uuid),
-                    zone=begin.zone,
-                )
-                created += 1
-            else:
-                matched += 1
-                conn.execute(
-                    "UPDATE encounters SET started_at = MIN(started_at, ?),"
-                    " ended_at = MAX(COALESCE(ended_at, ?), ?),"
-                    " zone = CASE WHEN zone = 'Unknown' THEN ? ELSE zone END"
-                    " WHERE id = ?",
-                    (begin.time_ms, begin.time_ms, ends.get(uuid, begin.time_ms), begin.zone, encounter_id),
-                )
-            for act in activities.get(uuid, []):
-                db.insert_encounter_activity(
-                    conn, session_id, encounter_id, act.activity, act.time_ms
-                )
-                activity_count += 1
-    return {"encounters_created": created, "encounters_matched": matched, "activities": activity_count}
+    derived = 0
+    if not begins:
+        # No corpse event ever fired for this session (legacy CSV imports,
+        # chat-only tails). The drops themselves are the only ledger evidence.
+        derived = _derive_legacy_ledger(conn, session_id)
+        activity_count = derived
+    else:
+        with conn:
+            for uuid, begin in begins.items():
+                key = (begin.monster, tuple(rebuilt_drops.get(uuid, [])))
+                encounter_id = existing_by_times.get(key)
+                if encounter_id is None and not rebuilt_drops.get(uuid):
+                    encounter_id = existing_by_start.get((begin.monster, begin.zone, begin.time_ms))
+                if encounter_id is None:
+                    encounter_id = db.insert_encounter(
+                        conn,
+                        session_id,
+                        uuid,
+                        begin.monster,
+                        begin.time_ms,
+                        ended_at=ends.get(uuid),
+                        zone=begin.zone,
+                    )
+                    created += 1
+                else:
+                    matched += 1
+                    conn.execute(
+                        "UPDATE encounters SET started_at = MIN(started_at, ?),"
+                        " ended_at = MAX(COALESCE(ended_at, ?), ?),"
+                        " zone = CASE WHEN zone = 'Unknown' THEN ? ELSE zone END"
+                        " WHERE id = ?",
+                        (begin.time_ms, begin.time_ms, ends.get(uuid, begin.time_ms), begin.zone, encounter_id),
+                    )
+                for act in activities.get(uuid, []):
+                    db.insert_encounter_activity(
+                        conn, session_id, encounter_id, act.activity, act.time_ms
+                    )
+                    activity_count += 1
+    return {
+        "encounters_created": created,
+        "encounters_matched": matched,
+        "derived": derived,
+        "activities": activity_count,
+    }
+
+
+def pending_ledger_sessions(conn: sqlite3.Connection) -> int:
+    """Count sessions that have loot drops but no activity ledger rows."""
+    row = conn.execute(
+        "SELECT COUNT(*) AS c FROM sessions s"
+        " WHERE EXISTS (SELECT 1 FROM loot_drops ld WHERE ld.session_id = s.id)"
+        " AND NOT EXISTS (SELECT 1 FROM encounter_activities ea WHERE ea.session_id = s.id)"
+    ).fetchone()
+    return int(row["c"])
 
 
 def backfill_all(
@@ -249,7 +306,9 @@ def backfill_all(
     if session_id is not None:
         return [{"session_id": session_id, **backfill_session(conn, session_id)}]
     rows = conn.execute(
-        "SELECT id FROM sessions WHERE EXISTS (SELECT 1 FROM raw_events WHERE raw_events.session_id = sessions.id)"
+        "SELECT id FROM sessions"
+        " WHERE EXISTS (SELECT 1 FROM raw_events WHERE raw_events.session_id = sessions.id)"
+        " OR EXISTS (SELECT 1 FROM loot_drops WHERE loot_drops.session_id = sessions.id)"
         " ORDER BY id"
     ).fetchall()
     results = []

@@ -390,12 +390,14 @@ def backfill_encounters(
     table.add_column("session")
     table.add_column("encounters created")
     table.add_column("encounters matched")
+    table.add_column("derived")
     table.add_column("activities")
     for result in results:
         table.add_row(
             str(result["session_id"]),
             str(result["encounters_created"]),
             str(result["encounters_matched"]),
+            str(result["derived"]),
             str(result["activities"]),
         )
     console.print(table)

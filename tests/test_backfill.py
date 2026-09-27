@@ -3,6 +3,8 @@ from pathlib import Path
 
 from gorgon_tracker import backfill, db
 from gorgon_tracker.config import TrackerConfig
+from gorgon_tracker.correlator import LootDrop, LootEvent
+from gorgon_tracker.ingest import DbWriter
 from gorgon_tracker.replay import expand_inputs, run_replay
 
 from . import scenario
@@ -149,5 +151,99 @@ def test_backfill_is_idempotent(tmp_path: Path) -> None:
         assert second[0]["encounters_created"] == 0
         assert second[0]["encounters_matched"] == first[0]["encounters_created"] + first[0]["encounters_matched"]
         assert _activity_map(conn) == {"Looting": 6, "Skinning": 4, "Butchering": 1, "Buried": 4}
+    finally:
+        conn.close()
+
+
+# --- legacy-migrated sessions (no corpse events in raw_events) ----------------
+
+
+def _legacy_style_session(conn: sqlite3.Connection) -> int:
+    """Mimic a legacy CSV import: pre-correlated drops + one chat raw row each."""
+    session_id = db.new_session(conn)
+    writer = DbWriter(conn, session_id)
+    rows = [
+        (1000, "leg-1", "Fallow Deer", "Skinning", "Crude Animal Skin", "Ilmari"),
+        (2000, "leg-1", "Fallow Deer", "Looting", "Deer Meat", "Ilmari"),
+        (3000, "leg-2", "Fallow Deer", "Looting", "Deer Meat", "Ilmari"),
+        (4000, "leg-3", "Moon Bat", "Skinning", "Bat Wing", "Old Graveyard"),
+        (5000, "leg-3", "Moon Bat", "Looting", "Bat Guano", "Old Graveyard"),
+        (6000, "leg-4", "Moon Bat", "Skinning", "Bat Wing", "Old Graveyard"),
+    ]
+    for time_ms, enc, monster, act, item, zone in rows:
+        writer.loot(LootEvent(time_ms=time_ms, item=item, amount=1))
+        writer.drop(
+            LootDrop(
+                time_ms=time_ms,
+                source=monster,
+                encounter_uuid=enc,
+                activity=act,
+                item=item,
+                amount=1,
+                status="Linked",
+                lag_ms=0,
+                zone=zone,
+            )
+        )
+    writer.close_encounters()
+    writer.commit()
+    return session_id
+
+
+def test_backfill_derives_legacy_ledger(tmp_path: Path) -> None:
+    conn = _populated(tmp_path)
+    try:
+        sid = _legacy_style_session(conn)
+        results = backfill.backfill_all(conn)
+        legacy = next(r for r in results if r["session_id"] == sid)
+        assert legacy["encounters_created"] == 0
+        assert legacy["encounters_matched"] == 0
+        assert legacy["derived"] == 6
+        assert legacy["activities"] == 6
+
+        # Per-activity rates now work from the observed drop activities.
+        rates = conn.execute(
+            "SELECT monster, activity, item, drops, encounters, drop_rate FROM v_drop_rates"
+            " ORDER BY monster, item"
+        ).fetchall()
+        skin = next(r for r in rates if r["item"] == "Crude Animal Skin" and r["monster"] == "Fallow Deer")
+        assert skin["activity"] == "Skinning"
+        assert skin["encounters"] == 1
+        assert round(skin["drop_rate"], 4) == 1.0
+        meat = next(r for r in rates if r["item"] == "Deer Meat")
+        assert meat["activity"] == "Looting"
+        assert meat["encounters"] == 2
+        wing = next(r for r in rates if r["item"] == "Bat Wing" and r["monster"] == "Moon Bat")
+        assert wing["activity"] == "Skinning"
+        assert wing["encounters"] == 2
+
+        # The encountered corpse kept its zone and end time from the drops.
+        bat = conn.execute(
+            "SELECT zone, ended_at FROM encounters WHERE encounter_uuid = 'leg-3'"
+        ).fetchone()
+        assert bat["zone"] == "Old Graveyard"
+        assert bat["ended_at"] == 5000
+
+        # Re-running adds nothing (idempotent).
+        assert backfill.backfill_all(conn)[-1]["derived"] == 0
+    finally:
+        conn.close()
+
+
+def test_backfill_mixed_sessions(tmp_path: Path) -> None:
+    conn = _populated(tmp_path)
+    try:
+        replay_result = backfill.backfill_all(conn)[0]
+        assert replay_result["derived"] == 0
+        assert replay_result["encounters_created"] == 0  # fresh ledger already complete
+        assert replay_result["encounters_matched"] == 6
+
+        sid = _legacy_style_session(conn)
+        results = backfill.backfill_all(conn)
+        assert len(results) == 2
+        by_id = {r["session_id"]: r for r in results}
+        assert by_id[sid]["derived"] == 6
+        assert by_id[replay_result["session_id"]]["encounters_matched"] == 6
+        assert _activity_map(conn)["Looting"] == 6 + 3  # golden 6 + legacy 3
     finally:
         conn.close()
