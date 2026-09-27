@@ -90,6 +90,6 @@ A skinning/butchering/extracting reward does not stock items through a corpse-wi
 - Parser: `src/gorgon_tracker/parsers/playerlog.py`
 - Live tailer: `src/gorgon_tracker/sources/player_log.py`
 - Tests: `tests/test_playerlog.py`, `tests/test_player_log_source.py`
-- Reconcile of chat + unity facts: `src/gorgon_tracker/correlator.py:536-655` (see `specs/correlation.md`)
+- Reconcile of chat + unity facts: `src/gorgon_tracker/correlator.py:670-789` (see `specs/correlation.md`)
 
 Update this doc when the game's log line shapes or the window/missed-loot logic change.

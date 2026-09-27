@@ -39,7 +39,7 @@ Defined at `src/gorgon_tracker/correlator.py:20-135`:
 
 ## Ingestion rules
 
-All rules implemented in `src/gorgon_tracker/correlator.py:277-464`.
+All rules implemented in `src/gorgon_tracker/correlator.py:276-437`.
 
 ### Loot
 
@@ -55,28 +55,28 @@ All rules implemented in `src/gorgon_tracker/correlator.py:277-464`.
 
 ### Interaction and corpse search
 
-- `ingest_interaction` opens a loot window. If the entity id maps to a known monster, it restores that monster context.
-- `ingest_corpse_search` records the monster by entity id. The corpse-description extractions (`skinned/butchered/extracted <item> from the corpse`) drive activity: a verb that newly appears on a previously-seen corpse flushes pending loot as that activity and records it on the encounter. A corpse first seen already showing the verb, or re-searched unchanged, never relabels or records (`correlator.py:369-391`).
-- The local player's own action arrives as the reward form (`<you> skinned/butchered/extracted the corpse (...) and obtained <items>`, parsed by `REWARD_RE` in `playerlog.py:63`). The reward names the items it granted (`reward_items`), so it is the fresh-action signal itself: it relabels without needing a prior search (`correlator.py:399-409`). The attribution is per item: only the named reward items inherit the verb, and other corpse loot in the same window (for example Stomach alongside skins) stays `Looting` (`correlator.py:782-792`).
+- `ingest_interaction` opens a loot window. If the entity id maps to a known monster, it restores that monster context. The tracker never maps a ground-node or container entity to a monster. Such a window does not flush pending loot, so a ground pickup never inherits a lingering corpse (`correlator.py:345-361`).
+- `ingest_corpse_search` records the monster by entity id. The corpse-description extractions (`skinned/butchered/extracted <item> from the corpse`) drive activity: a verb that newly appears on a previously-seen corpse flushes pending loot as that activity and records it on the encounter. A corpse first seen already showing the verb, or re-searched unchanged, never relabels or records (`correlator.py:374-435`).
+- The local player's own action arrives as the reward form (`<you> skinned/butchered/extracted the corpse (...) and obtained <items>`, parsed by `REWARD_RE` in `playerlog.py:63`). The reward names the items it granted (`reward_items`), so it is the fresh-action signal itself: it relabels without needing a prior search (`correlator.py:404-415`). The attribution is per item: only the named reward items inherit the verb, and other corpse loot in the same window (for example Stomach alongside skins) stays `Looting` (`correlator.py:819-832`).
 
 ### Chat activity marker
 
-`ingest_activity` stores an activity hint that applies to drops within `activity_window_seconds`, before or after the marker (`correlator.py:357-366`). It records the activity on the current encounter when a monster binds it. It also flushes immediately, so the `x added to inventory.` line before or after it is labeled.
+`ingest_activity` stores an activity hint that applies to drops within `activity_window_seconds`, before or after the marker (`correlator.py:363-369`). It records the activity on the current encounter when a monster binds it. It also flushes immediately, so the `x added to inventory.` line before or after it is labeled.
 
 ### Encounter lifecycle records
 
-Every new encounter with a known monster emits an `EncounterBegin` and a `Looting` activity (`_begin_encounter`, `correlator.py:485-496`). A corpse search frame means the player opened the corpse dialogue, which is looting performed. Activity records are emitted at the detection points above. A chat marker with no monster context never records. The `EncounterEnd` emits on bury and on encounter roll-over (`_end_encounter`, `correlator.py:507-510`).
+Every new encounter with a known monster emits an `EncounterBegin` and a `Looting` activity (`_begin_encounter`, `correlator.py:516-527`). A corpse search frame means the player opened the corpse dialogue, which is looting performed. Activity records are emitted at the detection points above. A chat marker with no monster context never records. The `EncounterEnd` emits on bury and on encounter roll-over (`_end_encounter`, `correlator.py:538-543`).
 
 The pipeline drains these through the writer (`pipeline.py:216-217`). Replay does the same per timeline event (`replay.py:212`).
 
 ## Flush and attribution
 
-`_flush` (`correlator.py:747-807`) runs on a source/bury/activity/corpse-search event. For each pending drop, after chat/unity reconciliation:
+`_flush` (`correlator.py:791-`) runs on a source/bury/activity/corpse-search event. For each pending drop, after chat/unity reconciliation:
 
-1. Monster-linked branch: `monster_lag <= buffer_seconds` and `monster_lag < orphan_lag`. Activity is `Looting`, upgraded to `Skinning`/`Butchering`/`Extracting` on a `just_*` transition within the window, or to the chat activity hint. Status `Linked`.
+1. Monster-linked branch: `monster_lag <= buffer_seconds`, `monster_lag < orphan_lag`, and `_plausibly_from_corpse` accepts the drop (`correlator.py:595-614`). A Unity pickup passes when its entity id maps to the current monster. A chat-only pickup passes when the open window is a corpse of the current monster and the pickup is within `search_corroboration_seconds`. Without any Unity corpse knowledge, every pickup passes (legacy proximity). Activity is `Looting`, upgraded to `Skinning`/`Butchering`/`Extracting` on a `just_*` transition within the window, or to the chat activity hint. Status `Linked`.
 2. Orphan branch: best target sighting within `target_fallback_seconds` (smallest lag wins). A same-name corpse search within `search_corroboration_seconds` makes it `Looting`. Otherwise it is `Harvesting` (flowers/logs/apples have no corpse-search packet). No target → `Ground/Unknown` with status `Orphaned`.
 
-`flush_expired` (`correlator.py:434-448`) emits orphaned drops for pending loot older than `buffer_seconds` so live streams do not hold them forever. `finalize` (`correlator.py:455-476`) flushes the remainder at end of stream with `lag_ms=0`.
+`flush_expired` (`correlator.py:455-473`) emits orphaned drops for pending loot older than `buffer_seconds` so live streams do not hold them forever. `finalize` (`correlator.py:476-516`) flushes the remainder at end of stream with `lag_ms=0`, by the same branch rules.
 
 ## Chat / Unity reconciliation
 

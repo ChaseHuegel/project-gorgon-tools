@@ -59,13 +59,17 @@ def test_pipeline_chat_only_end_to_end(tmp_path: Path) -> None:
 
     conn = db.connect(cfg.db.path)
     db.migrate(conn)
-    row = conn.execute("SELECT COUNT(*) c FROM loot_drops WHERE status='Linked'").fetchone()
-    assert row["c"] == 2
+    linked = conn.execute("SELECT COUNT(*) c FROM loot_drops WHERE status='Linked'").fetchone()["c"]
+    orphaned = conn.execute("SELECT COUNT(*) c FROM loot_drops WHERE status='Orphaned'").fetchone()["c"]
+    # Chat-only pickups with no monster or target are unattributable: orphaned,
+    # not linked to a ground.
+    assert orphaned == 2
+    assert linked == 0
     amounts = conn.execute("SELECT amount FROM loot_drops ORDER BY item").fetchall()
     assert [r["amount"] for r in amounts] == [2, 1]
     assert conn.execute("SELECT COUNT(*) c FROM loot").fetchone()["c"] == 2
     encounters = conn.execute("SELECT COUNT(*) c FROM encounters").fetchone()["c"]
-    assert encounters == 1
+    assert encounters == 2
     # Pipeline-owned session is closed when the run finishes.
     assert db.open_session(conn) is None
     conn.close()

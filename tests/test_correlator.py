@@ -606,7 +606,7 @@ def test_bury_clears_activity_hint() -> None:
             ("loot", loot(3.0, "Bat Wing")),
         ],
     )
-    assert drops[0].activity == "Looting"
+    assert drops[0].activity == "Harvesting"
 
 
 # --- encounter lifecycle records ---------------------------------------------
@@ -778,3 +778,93 @@ def test_interaction_restore_rolls_begin_for_known_entity() -> None:
     assert [b.monster for b in begins] == ["Wolf"]
     assert _acts(events) == ["Looting"]
     assert drops == []
+
+
+# --- ground-node harvests must not inherit a lingering corpse -----------------
+
+
+def _unity_entity(sec: float, item: str, entity: int, instance: int | None = None) -> LootEvent:
+    return LootEvent(
+        time_ms=make(sec) - make(sec) % 1000,
+        item=item,
+        amount=1,
+        instance_id=instance,
+        entity_id=entity,
+        source_class="unity",
+    )
+
+
+def test_node_interaction_does_not_claim_pending_loot() -> None:
+    """Opening a ground-node window must not link pending loot to the last corpse."""
+    c = Correlator()
+    drops = _run(
+        c,
+        [
+            ("interaction", InteractionStart(time_ms=make(0.0), entity_id=501)),
+            ("corpse", _corpse(1.0, "Cunning Wolf", 501)),
+            ("loot", loot(2.0, "Parasol Mushroom")),
+            ("interaction", InteractionStart(time_ms=make(3.0), entity_id=7001)),
+        ],
+    )
+    assert len(drops) == 1
+    assert drops[0].source == "Ground/Unknown"
+    assert drops[0].status == "Orphaned"
+
+
+def test_node_harvest_orphaned_while_corpse_loot_linked() -> None:
+    """A ground-node pickup stays Ground/Unknown; the corpse's own loot stays linked."""
+    c = Correlator()
+    drops = _run(
+        c,
+        [
+            ("interaction", InteractionStart(time_ms=make(0.0), entity_id=2887456)),
+            ("corpse", _corpse(1.0, "Cunning Wolf", 2887456)),
+            ("loot", loot(2.0, "Matted Hair")),
+            ("loot", _unity_entity(2.0, "MattedHair", entity=2887456, instance=-1717470776)),
+            ("interaction", InteractionStart(time_ms=make(3.0), entity_id=2901839)),
+            ("loot", _unity_entity(4.0, "Mushroom2", entity=2901839, instance=-1717470712)),
+            ("corpse", _corpse(5.0, "Cunning Wolf", 2887456)),
+        ],
+    )
+    linked = [d for d in drops if d.source == "Cunning Wolf"]
+    ground = [d for d in drops if d.source == "Ground/Unknown"]
+    assert len(linked) == 1
+    assert linked[0].item == "Matted Hair"
+    assert linked[0].linked_via == "monster"
+    assert len(ground) == 1
+    assert ground[0].linked_via == "orphan"
+    assert ground[0].status == "Orphaned"
+
+
+def test_chat_only_corpse_loot_inside_open_window_stays_linked() -> None:
+    """A chat-only pickup flushed by its own corpse search stays monster-linked."""
+    c = Correlator()
+    drops = _run(
+        c,
+        [
+            ("interaction", InteractionStart(time_ms=make(0.0), entity_id=501)),
+            ("corpse", _corpse(1.0, "Cunning Wolf", 501)),
+            ("loot", loot(2.0, "Matted Hair")),
+            ("corpse", _corpse(3.0, "Cunning Wolf", 501)),
+        ],
+    )
+    assert len(drops) == 1
+    assert drops[0].source == "Cunning Wolf"
+    assert drops[0].linked_via == "monster"
+
+
+def test_chat_only_drop_beyond_corroboration_window_stays_orphaned() -> None:
+    """A ground pickup within the 10s buffer yet beyond the corroboration window."""
+    c = Correlator()
+    drops = _run(
+        c,
+        [
+            ("interaction", InteractionStart(time_ms=make(0.0), entity_id=501)),
+            ("corpse", _corpse(1.0, "Cunning Wolf", 501)),
+            ("loot", loot(3.0, "Parasol Mushroom")),
+            ("corpse", _corpse(11.0, "Cunning Wolf", 501)),
+        ],
+    )
+    assert len(drops) == 1
+    assert drops[0].source == "Ground/Unknown"
+    assert drops[0].status == "Orphaned"

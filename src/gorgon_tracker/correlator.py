@@ -343,8 +343,13 @@ class Correlator:
         self.last_packet_time = event.time_ms
 
     def ingest_interaction(self, event: InteractionStart) -> None:
-        """A new corpse-looting window opens: flush any prior window's pending loot."""
-        if self.current_monster is not None:
+        """A new corpse-looting window opens: flush any prior window's pending loot.
+
+        A ground-node or container window (an entity never mapped to a monster)
+        must not attribute unrelated pending loot to the lingering monster, so
+        only a known corpse bounds the flush.
+        """
+        if self.current_monster is not None and event.entity_id in self.entity_monsters:
             self._flush(event.time_ms)
         self.current_window_entity = event.entity_id
         if event.entity_id in self.entity_monsters:
@@ -471,28 +476,38 @@ class Correlator:
     def finalize(self) -> list[LootDrop]:
         """Flush any remaining pending drops (end of stream)."""
         for fact in self._reconcile(self.pending):
-            self.drops.append(
-                LootDrop(
-                    time_ms=fact.time_ms,
-                    source=self.current_monster or GROUND,
-                    encounter_uuid=self.current_encounter_uuid,
-                    activity=self._hint_activity(fact.time_ms) or "Looting",
-                    item=fact.item,
-                    amount=fact.amount,
-                    status=("Linked" if self.current_monster is not None else "Missed" if fact.missed else "Linked"),
-                    lag_ms=0,
-                    zone=self.current_zone,
-                    linked_via="monster" if self.current_monster is not None else "orphan",
-                    monster_name=self.current_monster,
-                    monster_lag_ms=0,
-                    instance_id=fact.instance_id,
-                    entity_id=fact.entity_id,
-                    item_code_id=fact.item_code_id,
-                    item_display=fact.display_name,
-                    missed=fact.missed,
-                    killer_json=self._killer_json() if self.current_monster is not None else None,
+            monster_lag = 0.0 if self.current_monster is not None else _INF
+            if (
+                monster_lag <= self.buffer_seconds
+                and self._plausibly_from_corpse(fact, monster_lag)
+            ):
+                self.drops.append(
+                    LootDrop(
+                        time_ms=fact.time_ms,
+                        source=self.current_monster or GROUND,
+                        encounter_uuid=self.current_encounter_uuid,
+                        activity=self._hint_activity(fact.time_ms) or "Looting",
+                        item=fact.item,
+                        amount=fact.amount,
+                        status="Linked" if not fact.missed else "Missed",
+                        lag_ms=0,
+                        zone=self.current_zone,
+                        linked_via="monster",
+                        monster_name=self.current_monster,
+                        monster_lag_ms=0,
+                        instance_id=fact.instance_id,
+                        entity_id=fact.entity_id,
+                        item_code_id=fact.item_code_id,
+                        item_display=fact.display_name,
+                        missed=fact.missed,
+                        killer_json=self._killer_json(),
+                    )
                 )
-            )
+            else:
+                drop = self._orphan_drop(fact)
+                if fact.missed:
+                    drop = _missed_copy(drop)
+                self.drops.append(drop)
         self.pending.clear()
         return list(self.drops)
 
@@ -576,6 +591,28 @@ class Correlator:
         if abs(drop_time_ms - marker_ms) <= window:
             return activity
         return None
+
+    def _plausibly_from_corpse(self, fact: _Reconciled, monster_lag_s: float) -> bool:
+        """Whether the Unity provenance ties a pending fact to the current corpse.
+
+        A corpse pickup carries the corpse's entity id (from ``Player.log``),
+        so a fact whose entity maps to the current monster is corpse loot. A
+        chat-only fact has no entity; it still counts when the open loot window
+        is a corpse of the current monster and the pickup falls within the
+        corroboration window. Without any Unity corpse knowledge (chat/packet-
+        only capture) proximity is the only signal, so the check passes.
+        """
+        if fact.entity_id is not None:
+            return self.entity_monsters.get(fact.entity_id) == self.current_monster
+        if not self.entity_monsters and self.current_window_entity is None:
+            return True
+        window_entity = self.current_window_entity
+        if window_entity is None:
+            return False
+        return (
+            self.entity_monsters.get(window_entity) == self.current_monster
+            and monster_lag_s <= self.search_corroboration_seconds
+        )
 
     def _orphan_source(self, drop_time_ms: int) -> tuple[str, float]:
         """Best matching target sighting within the fallback window, else Ground/Unknown."""
@@ -773,7 +810,11 @@ class Correlator:
             hint_activity = self._hint_activity(fact.time_ms)
             orphan_name, orphan_lag = self._orphan_source(fact.time_ms)
 
-            if monster_lag <= self.buffer_seconds and monster_lag < orphan_lag:
+            if (
+                monster_lag <= self.buffer_seconds
+                and monster_lag < orphan_lag
+                and self._plausibly_from_corpse(fact, monster_lag)
+            ):
                 activity = "Looting"
                 # When reward_tokens is set (a player's own skinning/butchering
                 # reward named on the corpse-search screen), only the reward
