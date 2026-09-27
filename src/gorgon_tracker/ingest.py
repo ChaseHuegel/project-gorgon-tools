@@ -11,6 +11,9 @@ from .correlator import (
     ActivityEvent,
     BuryEvent,
     CorpseSearch,
+    EncounterActivity,
+    EncounterBegin,
+    EncounterEnd,
     InteractionStart,
     ItemCode,
     LootDrop,
@@ -199,8 +202,43 @@ class DbWriter:
         for encounter_uuid, ended_at in self._encounter_end.items():
             encounter_id = self._encounter_ids[encounter_uuid]
             self.conn.execute(
-                "UPDATE encounters SET ended_at = ? WHERE id = ?", (ended_at, encounter_id)
+                "UPDATE encounters SET ended_at = ? WHERE id = ? AND ended_at IS NULL",
+                (ended_at, encounter_id),
             )
+        for encounter_uuid, encounter_id in self._encounter_ids.items():
+            if encounter_uuid in self._encounter_end:
+                continue
+            row = self.conn.execute(
+                "SELECT MAX(performed_at) AS t FROM encounter_activities WHERE encounter_id = ?",
+                (encounter_id,),
+            ).fetchone()
+            ended = row["t"] if row is not None else None
+            if ended is not None:
+                self.conn.execute(
+                    "UPDATE encounters SET ended_at = ? WHERE id = ? AND ended_at IS NULL",
+                    (ended, encounter_id),
+                )
+
+    def encounter_begin(self, event: EncounterBegin) -> int:
+        encounter_id = self._encounter_ids.get(event.encounter_uuid)
+        if encounter_id is None:
+            encounter_id = db.insert_encounter(
+                self.conn, self.session_id, event.encounter_uuid, event.monster, event.time_ms
+            )
+            self._encounter_ids[event.encounter_uuid] = encounter_id
+        return encounter_id
+
+    def encounter_activity(self, event: EncounterActivity) -> None:
+        encounter_id = self._encounter_ids.get(event.encounter_uuid)
+        if encounter_id is None:
+            return
+        db.insert_encounter_activity(
+            self.conn, self.session_id, encounter_id, event.activity, event.time_ms
+        )
+
+    def encounter_end(self, event: EncounterEnd) -> None:
+        if event.encounter_uuid in self._encounter_ids:
+            self._encounter_end[event.encounter_uuid] = event.time_ms
 
     def commit(self) -> None:
         self.conn.commit()

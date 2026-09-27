@@ -1,4 +1,5 @@
 import sqlite3
+from importlib.resources import files as _files
 from pathlib import Path
 
 from gorgon_tracker import db
@@ -16,6 +17,8 @@ EXPECTED_TABLES = {
     "loot_overrides",
     "corpse_searches",
     "items",
+    "loot_publications",
+    "encounter_activities",
     "schema_migrations",
 }
 
@@ -50,29 +53,7 @@ def test_migrate_upgrades_version_1_database(tmp_path: Path) -> None:
     """A pre-evidence DB (v1) gains the new loot_drops columns and overrides table."""
     conn = sqlite3.connect(tmp_path / "old.db")
     conn.executescript(
-        """
-        CREATE TABLE loot (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id INTEGER NOT NULL,
-            raw_event_id INTEGER,
-            captured_at INTEGER NOT NULL,
-            item TEXT NOT NULL,
-            amount INTEGER NOT NULL DEFAULT 1
-        );
-        CREATE TABLE loot_drops (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id INTEGER NOT NULL,
-            encounter_id INTEGER,
-            captured_at INTEGER NOT NULL,
-            source TEXT NOT NULL,
-            item TEXT NOT NULL,
-            amount INTEGER NOT NULL DEFAULT 1,
-            activity TEXT NOT NULL DEFAULT 'Looting',
-            zone TEXT NOT NULL DEFAULT 'Unknown',
-            status TEXT NOT NULL DEFAULT 'Linked',
-            lag_ms INTEGER NOT NULL DEFAULT 0
-        );
-        """
+        _files("gorgon_tracker").joinpath("schema.sql").read_text(encoding="utf-8")
     )
     conn.execute("PRAGMA user_version = 1")
     conn.close()
@@ -94,6 +75,8 @@ def test_migrate_upgrades_version_1_database(tmp_path: Path) -> None:
         "missed",
         "killer_json",
     }
+    tables = _table_names(conn)
+    assert tables >= {"encounter_activities", "loot_publications"}
     conn.close()
 
 
@@ -163,6 +146,24 @@ def test_insert_helpers_roundtrip(tmp_path: Path) -> None:
     assert row["linked_via"] == "monster"
     assert row["monster_lag_ms"] == 42
     assert row["corroborated_by_search"] == 1
+    conn.close()
+
+
+def test_encounter_activity_roundtrip_and_dedup(tmp_path: Path) -> None:
+    conn = db.connect(tmp_path / "g.db")
+    db.migrate(conn)
+    session_id = db.new_session(conn)
+    enc_id = db.insert_encounter(conn, session_id, "uuid-1", "Deer", 1000)
+
+    db.insert_encounter_activity(conn, session_id, enc_id, "Looting", 1000)
+    db.insert_encounter_activity(conn, session_id, enc_id, "Skinning", 2000)
+    db.insert_encounter_activity(conn, session_id, enc_id, "Skinning", 2500)
+
+    rows = conn.execute("SELECT activity, performed_at FROM encounter_activities").fetchall()
+    assert [(r["activity"], r["performed_at"]) for r in rows] == [
+        ("Looting", 1000),
+        ("Skinning", 2000),
+    ]
     conn.close()
 
 

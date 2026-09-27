@@ -107,6 +107,48 @@ CREATE TABLE IF NOT EXISTS loot_publications (
 CREATE INDEX IF NOT EXISTS idx_loot_publications_published_at ON loot_publications(published_at);
 """
 
+# v7: per-encounter activity tracking. One row per (encounter, activity); the
+# unique key dedupes the same action reported by packet transitions, chat
+# markers, and corpse descriptions. Drop rates divide by these rows so a skin
+# drop is counted against skinned encounters, not every encounter (see the
+# reworked v_drop_rates view). Encounters are now written eagerly at their
+# first sighting, so corpses that yield no drops still count as encounters.
+_MIGRATION_V7_SQL = """
+CREATE TABLE IF NOT EXISTS encounter_activities (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL REFERENCES sessions(id),
+    encounter_id INTEGER NOT NULL REFERENCES encounters(id),
+    activity TEXT NOT NULL,
+    performed_at INTEGER NOT NULL,
+    UNIQUE (encounter_id, activity)
+);
+CREATE INDEX IF NOT EXISTS idx_encounter_activities_session
+    ON encounter_activities(session_id, performed_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_encounters_uuid ON encounters(encounter_uuid);
+
+DROP VIEW IF EXISTS v_drop_rates;
+CREATE VIEW IF NOT EXISTS v_drop_rates AS
+WITH activity_encounters AS (
+    SELECT e.monster AS source,
+           ea.activity,
+           COUNT(DISTINCT ea.encounter_id) AS encounter_count
+    FROM encounter_activities ea
+    JOIN encounters e ON e.id = ea.encounter_id
+    GROUP BY e.monster, ea.activity
+)
+SELECT ld.source AS monster,
+       ld.activity,
+       ld.item,
+       COUNT(*) AS drops,
+       SUM(ld.amount) AS quantity,
+       COALESCE(ae.encounter_count, 0) AS encounters,
+       ROUND(CAST(COUNT(*) AS REAL) / NULLIF(COALESCE(ae.encounter_count, 0), 0), 4) AS drop_rate
+FROM loot_drops ld
+LEFT JOIN activity_encounters ae ON ae.source = ld.source AND ae.activity = ld.activity
+WHERE ld.status = 'Linked'
+GROUP BY ld.source, ld.activity, ld.item;
+"""
+
 MIGRATIONS: list[tuple[int, str]] = [
     (1, _SCHEMA_SQL),
     (2, _MIGRATION_V2_SQL),
@@ -114,6 +156,7 @@ MIGRATIONS: list[tuple[int, str]] = [
     (4, _MIGRATION_V4_SQL),
     (5, _MIGRATION_V5_SQL),
     (6, _MIGRATION_V6_SQL),
+    (7, _MIGRATION_V7_SQL),
 ]
 
 COUNT_TABLES = (
@@ -126,6 +169,7 @@ COUNT_TABLES = (
     "encounters",
     "loot_drops",
     "corpse_searches",
+    "encounter_activities",
 )
 
 
@@ -452,6 +496,21 @@ def insert_encounter(
     )
 
 
+def insert_encounter_activity(
+    conn: sqlite3.Connection,
+    session_id: int,
+    encounter_id: int,
+    activity: str,
+    performed_at: int,
+) -> None:
+    """Record an action on an encounter; the unique key dedupes repeat reports."""
+    conn.execute(
+        "INSERT OR IGNORE INTO encounter_activities"
+        " (session_id, encounter_id, activity, performed_at) VALUES (?, ?, ?, ?)",
+        (session_id, encounter_id, activity, performed_at),
+    )
+
+
 def insert_loot_drop(
     conn: sqlite3.Connection,
     session_id: int,
@@ -564,6 +623,7 @@ def clear_all(conn: sqlite3.Connection) -> dict[str, int]:
         "loot_overrides",
         "loot_drops",
         "corpse_searches",
+        "encounter_activities",
         "sources",
         "loot",
         "burials",

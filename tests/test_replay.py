@@ -98,7 +98,7 @@ def test_replay_populates_typed_tables_and_views(tmp_path: Path) -> None:
 
     assert conn.execute("SELECT COUNT(*) c FROM sources").fetchone()["c"] == 7
     assert conn.execute("SELECT COUNT(*) c FROM loot").fetchone()["c"] == 4
-    assert conn.execute("SELECT COUNT(*) c FROM encounters").fetchone()["c"] == 4
+    assert conn.execute("SELECT COUNT(*) c FROM encounters").fetchone()["c"] == 5
     assert conn.execute("SELECT COUNT(*) c FROM zone_changes").fetchone()["c"] == 2
 
     # Every encounter is closed with a plausible window.
@@ -106,6 +106,20 @@ def test_replay_populates_typed_tables_and_views(tmp_path: Path) -> None:
         "SELECT COUNT(*) c FROM encounters WHERE ended_at IS NULL OR ended_at < started_at"
     ).fetchone()
     assert bad["c"] == 0
+
+    # Activities per encounter: Looting at start, actions at transitions/bury.
+    acts = conn.execute(
+        "SELECT activity, COUNT(*) c FROM encounter_activities GROUP BY activity"
+    ).fetchall()
+    assert {r["activity"]: r["c"] for r in acts} == {
+        "Looting": 4,
+        "Skinning": 2,
+        "Butchering": 1,
+        "Buried": 2,
+    }
+
+    # A skinned corpse with no recorded loot still counts as an encounter.
+    assert conn.execute("SELECT COUNT(*) c FROM loot_drops").fetchone()["c"] == 4
 
     # Aggregation views materialize.
     rows = conn.execute("SELECT monster, item FROM v_drop_rates ORDER BY monster, item").fetchall()

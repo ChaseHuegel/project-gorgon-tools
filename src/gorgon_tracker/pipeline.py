@@ -17,6 +17,9 @@ from .correlator import (
     BuryEvent,
     CorpseSearch,
     Correlator,
+    EncounterActivity,
+    EncounterBegin,
+    EncounterEnd,
     InteractionStart,
     ItemCode,
     LootEvent,
@@ -82,6 +85,20 @@ def _dispatch(event: object, writer: DbWriter, correlator: Correlator) -> str:
         correlator.note_item_code(event)
         return "item_code"
     raise TypeError(f"unhandled event type: {type(event).__name__}")
+
+
+def _write_encounter_event(event: object, writer: DbWriter, counters: Counter[str]) -> None:
+    if isinstance(event, EncounterBegin):
+        writer.encounter_begin(event)
+        counters["encounter"] += 1
+    elif isinstance(event, EncounterActivity):
+        writer.encounter_activity(event)
+        counters["encounter_activity"] += 1
+    elif isinstance(event, EncounterEnd):
+        writer.encounter_end(event)
+        counters["encounter_end"] += 1
+    else:
+        raise TypeError(f"unhandled encounter event: {type(event).__name__}")
 
 
 def has_capture_ok(cfg: TrackerConfig) -> bool:
@@ -196,6 +213,8 @@ def _run_pipeline_inner(
             continue
         kind = _dispatch(event, writer, correlator)
         counters[kind] += 1
+        for encounter_event in correlator.take_encounter_events():
+            _write_encounter_event(encounter_event, writer, counters)
         for drop in correlator.take_drops():
             writer.drop(drop)
             counters["loot_drop"] += 1
@@ -215,6 +234,8 @@ def _run_pipeline_inner(
             break
         kind = _dispatch(event, writer, correlator)
         counters[kind] += 1
+        for encounter_event in correlator.take_encounter_events():
+            _write_encounter_event(encounter_event, writer, counters)
 
     for drop in correlator.finalize():
         writer.drop(drop)

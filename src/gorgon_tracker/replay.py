@@ -15,6 +15,9 @@ from .correlator import (
     BuryEvent,
     CorpseSearch,
     Correlator,
+    EncounterActivity,
+    EncounterBegin,
+    EncounterEnd,
     InteractionStart,
     ItemCode,
     LootEvent,
@@ -202,35 +205,20 @@ def run_replay(
         timeline.append((item_code.time_ms, 2, item_code))
     timeline.sort(key=lambda item: (item[0], item[1]))
 
+    encounters = 0
+    encounter_activities = 0
     for _, _, timeline_event in timeline:
-        if isinstance(timeline_event, ZoneChange):
-            writer.zone(timeline_event)
-            correlator.ingest_zone_change(timeline_event)
-        elif isinstance(timeline_event, TargetSighting):
-            writer.target(timeline_event)
-            correlator.ingest_target(timeline_event)
-        elif isinstance(timeline_event, BuryEvent):
-            writer.bury(timeline_event)
-            correlator.ingest_bury(timeline_event)
-        elif isinstance(timeline_event, ActivityEvent):
-            writer.activity(timeline_event)
-            correlator.ingest_activity(timeline_event)
-        elif isinstance(timeline_event, LootEvent):
-            writer.loot(timeline_event)
-            correlator.ingest_loot(timeline_event)
-        elif isinstance(timeline_event, InteractionStart):
-            writer.interaction(timeline_event)
-            correlator.ingest_interaction(timeline_event)
-        elif isinstance(timeline_event, CorpseSearch):
-            writer.corpse_search(timeline_event)
-            correlator.ingest_corpse_search(timeline_event)
-        elif isinstance(timeline_event, ItemCode):
-            writer.raw_item_code(timeline_event)
-            correlator.note_item_code(timeline_event)
-        else:
-            assert isinstance(timeline_event, SourceEvent)
-            writer.source(timeline_event)
-            correlator.ingest_source(timeline_event)
+        _ingest_timeline_event(timeline_event, writer, correlator)
+        for encounter_event in correlator.take_encounter_events():
+            if isinstance(encounter_event, EncounterBegin):
+                writer.encounter_begin(encounter_event)
+                encounters += 1
+            elif isinstance(encounter_event, EncounterActivity):
+                writer.encounter_activity(encounter_event)
+                encounter_activities += 1
+            else:
+                assert isinstance(encounter_event, EncounterEnd)
+                writer.encounter_end(encounter_event)
 
     drops = correlator.finalize()
     for drop in drops:
@@ -250,8 +238,43 @@ def run_replay(
         "targets": len(target_sightings),
         "burials": len(bury_events),
         "activities": len(activity_events),
+        "encounters": encounters,
+        "encounter_activities": encounter_activities,
         "drops": len(drops),
     }
+
+
+def _ingest_timeline_event(
+    timeline_event: object, writer: DbWriter, correlator: Correlator
+) -> None:
+    if isinstance(timeline_event, ZoneChange):
+        writer.zone(timeline_event)
+        correlator.ingest_zone_change(timeline_event)
+    elif isinstance(timeline_event, TargetSighting):
+        writer.target(timeline_event)
+        correlator.ingest_target(timeline_event)
+    elif isinstance(timeline_event, BuryEvent):
+        writer.bury(timeline_event)
+        correlator.ingest_bury(timeline_event)
+    elif isinstance(timeline_event, ActivityEvent):
+        writer.activity(timeline_event)
+        correlator.ingest_activity(timeline_event)
+    elif isinstance(timeline_event, LootEvent):
+        writer.loot(timeline_event)
+        correlator.ingest_loot(timeline_event)
+    elif isinstance(timeline_event, InteractionStart):
+        writer.interaction(timeline_event)
+        correlator.ingest_interaction(timeline_event)
+    elif isinstance(timeline_event, CorpseSearch):
+        writer.corpse_search(timeline_event)
+        correlator.ingest_corpse_search(timeline_event)
+    elif isinstance(timeline_event, ItemCode):
+        writer.raw_item_code(timeline_event)
+        correlator.note_item_code(timeline_event)
+    else:
+        assert isinstance(timeline_event, SourceEvent)
+        writer.source(timeline_event)
+        correlator.ingest_source(timeline_event)
 
 
 def _read_header(path: Path) -> list[str]:
