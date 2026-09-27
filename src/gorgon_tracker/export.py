@@ -114,7 +114,7 @@ def export_loot_csv_text(
     return buffer.getvalue()
 
 
-_ANALYSIS_HEADER = ["Monster", "Item", "Drops", "Quantity", "Encounters", "DropRate", "LastSeen"]
+_ANALYSIS_HEADER = ["Monster", "Activity", "Item", "Drops", "Quantity", "Encounters", "DropRate", "LastSeen"]
 
 
 def export_analysis_rows_text(rows: Sequence[Mapping[str, Any]]) -> str:
@@ -126,6 +126,7 @@ def export_analysis_rows_text(rows: Sequence[Mapping[str, Any]]) -> str:
         writer.writerow(
             [
                 row.get("monster", ""),
+                row.get("activity", ""),
                 row.get("item", ""),
                 row.get("drops", ""),
                 row.get("quantity", ""),

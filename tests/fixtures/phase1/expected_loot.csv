@@ -3,3 +3,4 @@ rel_ms,source,encounter,activity,item,amount,status,lag_ms,zone
 9.0,Dire Wolf,2,Looting,Wolf Pelt,2,Linked,1000,Fairy Glen
 12.0,Dire Wolf,3,Looting,Ground Twig,1,Linked,0,Fairy Glen
 20.0,Giant Bat,4,Looting,Bat Wing,1,Linked,0,Fairy Glen
+33.0,Deer,5,Skinning,Crude Animal Skin,1,Linked,1000,Fairy Glen

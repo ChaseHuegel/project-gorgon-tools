@@ -39,17 +39,27 @@ def test_endpoints_serve_read_only(tmp_path: Path) -> None:
     assert len(sessions) == 1
 
     summary = client.get("/api/summary").json()
-    assert len(summary) == 4
+    assert len(summary) == 5
 
     rates = client.get("/api/drop-rates").json()
-    assert len(rates) == 4
+    assert len(rates) == 5
     filtered = client.get("/api/drop-rates", params={"monster": "Dire Wolf"}).json()
     assert len(filtered) == 2
     assert all(r["monster"] == "Dire Wolf" for r in filtered)
 
+    # Rates are per activity: a skin drop divides by skinned deer encounters.
+    skin = next(r for r in rates if r["item"] == "Crude Animal Skin")
+    assert skin["activity"] == "Skinning"
+    assert skin["encounters"] == 2  # two deer were skinned, one yielded the skin
+    assert round(skin["drop_rate"], 4) == 0.5
+
+    bat = next(r for r in rates if r["item"] == "Bat Guano")
+    assert bat["activity"] == "Looting"
+    assert bat["encounters"] == 3  # three bat corpse windows opened
+
     loot = client.get("/api/loot", params={"limit_rows": 2}).json()
     assert len(loot) == 2
-    assert loot[0]["item"] in {"Bat Wing", "Bat Guano", "Wolf Pelt", "Ground Twig"}
+    assert loot[0]["item"] in {"Bat Wing", "Bat Guano", "Wolf Pelt", "Ground Twig", "Crude Animal Skin"}
     assert "id" in loot[0]
 
 
@@ -126,13 +136,13 @@ def test_zone_and_stats_endpoints(tmp_path: Path) -> None:
     assert other["sources"] == []
 
     stats = client.get("/api/stats").json()
-    assert stats["drops"] == 4
-    assert stats["quantity"] >= 4
-    assert stats["sources"] >= 2
+    assert stats["drops"] == 5
+    assert stats["quantity"] >= 5
+    assert stats["sources"] >= 3
     assert stats["items"] >= 4
     assert stats["zones"] == 2
-    assert stats["encounters"] > 0
-    assert stats["linked"] == 4
+    assert stats["encounters"] >= 5
+    assert stats["linked"] == 5
     assert stats["orphaned"] == 0
 
     filtered = client.get("/api/stats", params={"zone": "Old Graveyard"}).json()
@@ -150,15 +160,19 @@ def test_drop_rates_since_offset_and_multi(tmp_path: Path) -> None:
     assert all("last_seen" in r for r in all_rates)
     assert all("last_seen" in r for r in client.get("/api/summary").json())
 
-    late = client.get("/api/drop-rates", params={"since": at(25)}).json()
+    late = client.get("/api/drop-rates", params={"since": at(50)}).json()
     assert late == []
+
+    late_skin = client.get("/api/drop-rates", params={"since": at(25)}).json()
+    assert [r["item"] for r in late_skin] == ["Crude Animal Skin"]
+    assert late_skin[0]["encounters"] == 2  # both deer skins happened in the window
 
     mid = client.get("/api/drop-rates", params={"since": at(14)}).json()
     assert 0 < len(mid) < len(all_rates)
     assert all(r["last_seen"] >= at(14) for r in mid)
 
     multi = client.get("/api/drop-rates", params={"monsters": "Giant Bat, Dire Wolf"}).json()
-    assert len(multi) == len(all_rates)
+    assert len(multi) == 4
     assert all(r["monster"] in {"Giant Bat", "Dire Wolf"} for r in multi)
 
     only_bat = client.get("/api/drop-rates", params={"monsters": "Giant Bat"}).json()
@@ -168,8 +182,10 @@ def test_drop_rates_since_offset_and_multi(tmp_path: Path) -> None:
 
     page1 = client.get("/api/drop-rates", params={"limit": 2, "offset": 0}).json()
     page2 = client.get("/api/drop-rates", params={"limit": 2, "offset": 2}).json()
-    assert len(page1) == 2 and len(page2) == 2
-    assert {r["item"] for r in page1} | {r["item"] for r in page2} == {r["item"] for r in all_rates}
+    page3 = client.get("/api/drop-rates", params={"limit": 2, "offset": 4}).json()
+    assert len(page1) == 2 and len(page2) == 2 and len(page3) == 1
+    all_items = {r["item"] for r in all_rates}
+    assert {r["item"] for r in page1 + page2 + page3} == all_items
 
     hits = client.get("/api/search", params={"q": "Bat"}).json()
     assert any("last_seen" in s for s in hits["sources"])
@@ -181,7 +197,7 @@ def test_loot_endpoint_exposes_evidence_and_filters(tmp_path: Path) -> None:
     client = TestClient(serve.build_app(str(db_path)))
 
     all_rows = client.get("/api/loot", params={"limit_rows": 100}).json()
-    assert len(all_rows) == 4
+    assert len(all_rows) == 5
     by_item = {r["item"]: r for r in all_rows}
     for key in ("linked_via", "monster_name", "monster_lag_ms", "target_name", "target_lag_ms", "overridden"):
         assert key in by_item["Bat Guano"]
@@ -192,8 +208,8 @@ def test_loot_endpoint_exposes_evidence_and_filters(tmp_path: Path) -> None:
     assert twig["corroborated_by_search"] is True
     assert twig["activity"] == "Looting"
 
-    assert len(client.get("/api/loot", params={"linked_via": "monster"}).json()) == 3
-    assert len(client.get("/api/loot", params={"confidence": "high"}).json()) == 3
+    assert len(client.get("/api/loot", params={"linked_via": "monster"}).json()) == 4
+    assert len(client.get("/api/loot", params={"confidence": "high"}).json()) == 4
     assert len(client.get("/api/loot", params={"confidence": "uncertain"}).json()) == 1
 
 

@@ -128,10 +128,10 @@ def test_replay_cli_end_to_end(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert "Replay summary" in result.output
     drops_line = [line for line in result.output.splitlines() if "drops" in line]
-    assert drops_line and "4" in drops_line[0]
+    assert drops_line and "5" in drops_line[0]
     conn = db.connect(db_path)
     db.migrate(conn)
-    assert conn.execute("SELECT COUNT(*) c FROM loot_drops").fetchone()["c"] == 4
+    assert conn.execute("SELECT COUNT(*) c FROM loot_drops").fetchone()["c"] == 5
     conn.close()
 
 

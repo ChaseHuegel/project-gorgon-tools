@@ -223,7 +223,12 @@ class DbWriter:
         encounter_id = self._encounter_ids.get(event.encounter_uuid)
         if encounter_id is None:
             encounter_id = db.insert_encounter(
-                self.conn, self.session_id, event.encounter_uuid, event.monster, event.time_ms
+                self.conn,
+                self.session_id,
+                event.encounter_uuid,
+                event.monster,
+                event.time_ms,
+                zone=event.zone,
             )
             self._encounter_ids[event.encounter_uuid] = encounter_id
         return encounter_id

@@ -77,13 +77,14 @@ def test_replay_matches_committed_golden_output(tmp_path: Path) -> None:
     )
 
     assert stats["windows"] == 1
-    assert stats["sources"] == 7
+    assert stats["sources"] == 11
     assert stats["zones"] == 2
     assert stats["targets"] == 2
-    assert stats["burials"] == 2
-    assert stats["loot_kept"] == 4
+    assert stats["burials"] == 4
+    assert stats["activities"] == 2
+    assert stats["loot_kept"] == 5
     assert stats["loot_filtered"] == 2
-    assert stats["drops"] == 4
+    assert stats["drops"] == 5
 
     expected = _read_golden()
     actual = _normalized_drops(conn, files.base_ms)
@@ -96,9 +97,9 @@ def test_replay_populates_typed_tables_and_views(tmp_path: Path) -> None:
     conn = _connect(tmp_path)
     run_replay(conn, cfg, expand_inputs([files.capture_json, files.chat_log, files.zones_csv, files.targets_csv]))
 
-    assert conn.execute("SELECT COUNT(*) c FROM sources").fetchone()["c"] == 7
-    assert conn.execute("SELECT COUNT(*) c FROM loot").fetchone()["c"] == 4
-    assert conn.execute("SELECT COUNT(*) c FROM encounters").fetchone()["c"] == 5
+    assert conn.execute("SELECT COUNT(*) c FROM sources").fetchone()["c"] == 11
+    assert conn.execute("SELECT COUNT(*) c FROM loot").fetchone()["c"] == 5
+    assert conn.execute("SELECT COUNT(*) c FROM encounters").fetchone()["c"] == 7
     assert conn.execute("SELECT COUNT(*) c FROM zone_changes").fetchone()["c"] == 2
 
     # Every encounter is closed with a plausible window.
@@ -112,18 +113,18 @@ def test_replay_populates_typed_tables_and_views(tmp_path: Path) -> None:
         "SELECT activity, COUNT(*) c FROM encounter_activities GROUP BY activity"
     ).fetchall()
     assert {r["activity"]: r["c"] for r in acts} == {
-        "Looting": 4,
-        "Skinning": 2,
+        "Looting": 6,
+        "Skinning": 4,
         "Butchering": 1,
-        "Buried": 2,
+        "Buried": 4,
     }
 
     # A skinned corpse with no recorded loot still counts as an encounter.
-    assert conn.execute("SELECT COUNT(*) c FROM loot_drops").fetchone()["c"] == 4
+    assert conn.execute("SELECT COUNT(*) c FROM loot_drops").fetchone()["c"] == 5
 
     # Aggregation views materialize.
     rows = conn.execute("SELECT monster, item FROM v_drop_rates ORDER BY monster, item").fetchall()
-    assert len(rows) == 4
+    assert len(rows) == 5
     conn.close()
 
 

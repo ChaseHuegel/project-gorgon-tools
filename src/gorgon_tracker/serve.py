@@ -74,26 +74,78 @@ _SORT_COLUMNS: dict[str, str] = {
 }
 
 _DROP_RATES_BASE = """
-WITH encounter_counts AS (
-    SELECT source AS monster, COUNT(DISTINCT encounter_id) AS encounter_count
-    FROM loot_drops
-    WHERE status = 'Linked' AND encounter_id IS NOT NULL
-    GROUP BY source
-)
+WITH {cte}
 SELECT ld.source AS monster,
+       ld.activity,
        ld.item,
        COUNT(*) AS drops,
        SUM(ld.amount) AS quantity,
-       COALESCE(e.encounter_count, 0) AS encounters,
-       ROUND(CAST(COUNT(*) AS REAL) / NULLIF(COALESCE(e.encounter_count, 0), 0), 4) AS drop_rate,
+       COALESCE(ae.encounter_count, 0) AS encounters,
+       ROUND(CAST(COUNT(*) AS REAL) / NULLIF(COALESCE(ae.encounter_count, 0), 0), 4) AS drop_rate,
        MAX(ld.captured_at) AS last_seen
 FROM loot_drops ld
-LEFT JOIN encounter_counts e ON e.monster = ld.source
+LEFT JOIN activity_encounters ae ON ae.source = ld.source AND ae.activity = ld.activity
 {where}
-GROUP BY ld.source, ld.item
+GROUP BY ld.source, ld.activity, ld.item
 {order}
 {limit}
 """
+
+
+def _activity_cte(
+    *,
+    by_activity: bool = True,
+    monster: str | None = None,
+    activity: str | None = None,
+    zone: str | None = None,
+    since: int | None = None,
+    until: int | None = None,
+) -> tuple[str, list[Any]]:
+    """Per-(monster, activity) encounter counts from the activity ledger.
+
+    Filters mirror the loot_drops side, so a restricted rate divides by the
+    encounters that match the same constraints. ``by_activity=False`` groups
+    per monster only (any activity).
+    """
+    clauses: list[str] = []
+    params: list[Any] = []
+    if monster:
+        clauses.append("e.monster = ?")
+        params.append(monster)
+    if activity:
+        clauses.append("ea.activity = ?")
+        params.append(activity)
+    if zone:
+        clauses.append("e.zone = ?")
+        params.append(zone)
+    if since is not None:
+        clauses.append("ea.performed_at >= ?")
+        params.append(since)
+    if until is not None:
+        clauses.append("ea.performed_at <= ?")
+        params.append(until)
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    if by_activity:
+        cte = (
+            "activity_encounters AS (\n"
+            "    SELECT e.monster AS source, ea.activity,"
+            " COUNT(DISTINCT ea.encounter_id) AS encounter_count\n"
+            "    FROM encounter_activities ea\n"
+            "    JOIN encounters e ON e.id = ea.encounter_id\n"
+            f"    {where}\n"
+            "    GROUP BY e.monster, ea.activity)"
+        )
+    else:
+        cte = (
+            "activity_encounters AS (\n"
+            "    SELECT e.monster AS source,"
+            " COUNT(DISTINCT ea.encounter_id) AS encounter_count\n"
+            "    FROM encounter_activities ea\n"
+            "    JOIN encounters e ON e.id = ea.encounter_id\n"
+            f"    {where}\n"
+            "    GROUP BY e.monster)"
+        )
+    return cte, params
 
 
 def _drop_rates_where(
@@ -218,7 +270,11 @@ def _drop_rates(
         params.extend(items)
     if list_clauses:
         where = (where + " AND " if where else "WHERE ") + " AND ".join(list_clauses)
-    query = _DROP_RATES_BASE.format(where=where, order=_orders(sort, order), limit="")
+    cte, cte_params = _activity_cte(
+        monster=monster, activity=activity, zone=zone, since=since, until=until
+    )
+    query = _DROP_RATES_BASE.format(cte=cte, where=where, order=_orders(sort, order), limit="")
+    params = cte_params + params
     if offset is not None and limit is None:
         query += " LIMIT -1"
     elif limit is not None:
@@ -454,12 +510,16 @@ def build_read_router(db_path: str, include_index: bool = True) -> tuple[APIRout
     @router.get("/api/activity/{name:path}")
     def activity_detail(name: str, since: int | None = None) -> dict[str, Any] | None:
         time_clause, time_params = _time_clause(since=since)
+        cte, cte_params = _activity_cte(by_activity=False, activity=name, since=since)
         sources = db.rows(
-            "SELECT source AS monster, COUNT(*) AS drops, "
-            "COUNT(DISTINCT encounter_id) AS encounters, MAX(captured_at) AS last_seen "
-            "FROM loot_drops WHERE activity = ?" + time_clause
-            + " GROUP BY source ORDER BY encounters DESC, drops DESC",
-            (name, *time_params),
+            "WITH " + cte
+            + " SELECT ld.source AS monster, COUNT(*) AS drops, "
+            "COALESCE(ae.encounter_count, 0) AS encounters, MAX(ld.captured_at) AS last_seen "
+            "FROM loot_drops ld "
+            "LEFT JOIN activity_encounters ae ON ae.source = ld.source "
+            "WHERE ld.activity = ?" + time_clause
+            + " GROUP BY ld.source ORDER BY encounters DESC, drops DESC",
+            tuple(cte_params) + (name,) + tuple(time_params),
         )
         items = db.rows(
             "SELECT item, COUNT(*) AS drops, MAX(captured_at) AS last_seen "
@@ -541,14 +601,19 @@ def build_read_router(db_path: str, include_index: bool = True) -> tuple[APIRout
             status_clause = "ld.status = ?"
             where = where + " AND " + status_clause if where else "WHERE " + status_clause
             params.append(status)
-        encounters = "COUNT(DISTINCT ld.encounter_id)"
-        rate = f"ROUND(CAST(COUNT(*) AS REAL) / NULLIF({encounters}, 0), 4)"
+        cte, cte_params = _activity_cte(
+            by_activity=False, monster=source, activity=activity, zone=zone, since=since, until=until
+        )
         rows = db.rows(
-            "SELECT ld.source AS monster, COUNT(*) AS drops, SUM(ld.amount) AS quantity, "
-            f"{encounters} AS encounters, "
-            f"{rate} AS drop_rate, MAX(ld.captured_at) AS last_seen "
-            f"FROM loot_drops ld {where} GROUP BY ld.source ORDER BY drops DESC LIMIT ?",
-            tuple(params) + (max(1, min(limit, 500)),),
+            "WITH " + cte
+            + " SELECT ld.source AS monster, COUNT(*) AS drops, SUM(ld.amount) AS quantity, "
+            "COALESCE(ae.encounter_count, 0) AS encounters, "
+            "ROUND(CAST(COUNT(*) AS REAL) / NULLIF(COALESCE(ae.encounter_count, 0), 0), 4) AS drop_rate, "
+            f"MAX(ld.captured_at) AS last_seen "
+            f"FROM loot_drops ld "
+            "LEFT JOIN activity_encounters ae ON ae.source = ld.source "
+            f"{where} GROUP BY ld.source ORDER BY drops DESC LIMIT ?",
+            tuple(cte_params + params) + (max(1, min(limit, 500)),),
         )
         return rows
 
@@ -609,9 +674,13 @@ def build_read_router(db_path: str, include_index: bool = True) -> tuple[APIRout
         until: int | None = None,
     ) -> dict[str, Any]:
         where, params = _axis_filter(source, item, zone, activity, since=since, until=until)
+        cte, cte_params = _activity_cte(
+            by_activity=False, monster=source, activity=activity, zone=zone, since=since, until=until
+        )
         row = db.rows(
-            f"SELECT COUNT(*) AS drops,"
-            " COUNT(DISTINCT ld.encounter_id) AS encounters,"
+            "WITH " + cte
+            + " SELECT COUNT(*) AS drops,"
+            " COALESCE((SELECT SUM(encounter_count) FROM activity_encounters), 0) AS encounters,"
             " COALESCE(SUM(ld.amount), 0) AS quantity,"
             " COUNT(DISTINCT ld.source) AS sources,"
             " COUNT(DISTINCT ld.item) AS items,"
@@ -620,7 +689,7 @@ def build_read_router(db_path: str, include_index: bool = True) -> tuple[APIRout
             " SUM(CASE WHEN ld.status = 'Orphaned' THEN 1 ELSE 0 END) AS orphaned,"
             " COALESCE(MAX(ld.captured_at), 0) AS newest_at"
             f" FROM loot_drops ld {where}",
-            tuple(params),
+            tuple(cte_params + params),
         )
         return row[0] if row else {}
 

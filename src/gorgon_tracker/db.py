@@ -112,7 +112,8 @@ CREATE INDEX IF NOT EXISTS idx_loot_publications_published_at ON loot_publicatio
 # markers, and corpse descriptions. Drop rates divide by these rows so a skin
 # drop is counted against skinned encounters, not every encounter (see the
 # reworked v_drop_rates view). Encounters are now written eagerly at their
-# first sighting, so corpses that yield no drops still count as encounters.
+# first sighting with their zone, so corpses that yield no drops still count
+# as encounters under zone filters.
 _MIGRATION_V7_SQL = """
 CREATE TABLE IF NOT EXISTS encounter_activities (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -125,6 +126,7 @@ CREATE TABLE IF NOT EXISTS encounter_activities (
 CREATE INDEX IF NOT EXISTS idx_encounter_activities_session
     ON encounter_activities(session_id, performed_at);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_encounters_uuid ON encounters(encounter_uuid);
+ALTER TABLE encounters ADD COLUMN zone TEXT NOT NULL DEFAULT 'Unknown';
 
 DROP VIEW IF EXISTS v_drop_rates;
 CREATE VIEW IF NOT EXISTS v_drop_rates AS
@@ -482,6 +484,7 @@ def insert_encounter(
     monster: str,
     started_at: int,
     ended_at: int | None = None,
+    zone: str = "Unknown",
 ) -> int:
     return _insert(
         conn,
@@ -492,6 +495,7 @@ def insert_encounter(
             "monster": monster,
             "started_at": started_at,
             "ended_at": ended_at,
+            "zone": zone,
         },
     )
 

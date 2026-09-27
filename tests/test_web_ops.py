@@ -61,12 +61,12 @@ def test_replay_upload(tmp_path: Path) -> None:
     resp = client.post("/api/replay", files=uploads)
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["drops"] == 4
+    assert body["drops"] == 5
     assert len(body["inputs"]) == 4
 
     conn = db.connect(str(tmp_path / "data/gorgon.db"))
     db.migrate(conn)
-    assert conn.execute("SELECT COUNT(*) c FROM loot_drops").fetchone()["c"] == 4
+    assert conn.execute("SELECT COUNT(*) c FROM loot_drops").fetchone()["c"] == 5
     conn.close()
 
 
@@ -85,7 +85,7 @@ def test_replay_server_paths_only(tmp_path: Path, monkeypatch) -> None:
         },
     )
     assert resp.status_code == 200, resp.text
-    assert resp.json()["drops"] == 4
+    assert resp.json()["drops"] == 5
 
 
 def test_migrate_upload(tmp_path: Path) -> None:

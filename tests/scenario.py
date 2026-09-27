@@ -67,6 +67,10 @@ CAPTURE_FRAMES = [
     frame_json(16.0, "Search Corpse of Giant Bat\nSkin Corpse\n"),
     frame_json(20.0, "Search Corpse of Giant Bat\nSkin Corpse\n"),
     frame_json(21.0, "Search Corpse of Giant Bat\n"),
+    frame_json(30.0, "Search Corpse of Deer\nSkin Corpse\n"),
+    frame_json(31.0, "Search Corpse of Deer\n"),
+    frame_json(40.0, "Search Corpse of Deer\nSkin Corpse\n"),
+    frame_json(41.0, "Search Corpse of Deer\n"),
 ]
 
 ZONE_ROWS = [
@@ -80,15 +84,21 @@ TARGET_ROWS = [
 ]
 
 # Chat log lines are whole-second resolution (legacy format).
+# (seconds, item, amount, marker) where marker is None, "bury", or a verb.
 CHAT_LINES = [
-    (1.0, "PreWindow Item", 1),
-    (3.0, "Bat Guano", 1),
-    (6.0, None, None),  # bury
-    (9.0, "Wolf Pelt", 2),
-    (12.0, "Ground Twig", 1),
-    (13.0, None, None),  # bury
-    (20.0, "Bat Wing", 1),
-    (35.0, "PostWindow Item", 1),
+    (1.0, "PreWindow Item", 1, None),
+    (3.0, "Bat Guano", 1, None),
+    (6.0, None, None, "bury"),
+    (9.0, "Wolf Pelt", 2, None),
+    (12.0, "Ground Twig", 1, None),
+    (13.0, None, None, "bury"),
+    (20.0, "Bat Wing", 1, None),
+    (32.0, None, None, "skin"),
+    (33.0, "Crude Animal Skin", 1, None),
+    (34.0, None, None, "bury"),
+    (42.0, None, None, "skin"),
+    (43.0, None, None, "bury"),
+    (60.0, "PostWindow Item", 1, None),
 ]
 
 
@@ -108,9 +118,12 @@ def build(tmp_path: Path) -> ScenarioFiles:
 
     chat = tmp_path / "chatsession.log"
     lines = []
-    for seconds, item, amount in CHAT_LINES:
-        if item is None:
+    verbs = {"skin": "skin", "butcher": "butcher", "extract": "extract"}
+    for seconds, item, amount, marker in CHAT_LINES:
+        if marker == "bury":
             lines.append(f"{local_wall(seconds)} [Status] You bury the corpse.")
+        elif marker:
+            lines.append(f"{local_wall(seconds)} [Status] You {verbs[marker]} the corpse.")
         else:
             lines.append(f"{local_wall(seconds)} [Status] {item} x{amount} added to inventory.")
     chat.write_text("\n".join(lines) + "\n")

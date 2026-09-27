@@ -112,8 +112,8 @@ def test_export_analysis_downloads_csv(tmp_path: Path) -> None:
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("text/csv")
     text = resp.text
-    assert text.splitlines()[0] == "Monster,Item,Drops,Quantity,Encounters,DropRate,LastSeen"
-    assert any("Giant Bat,Bat Guano" in line for line in text.splitlines())
+    assert text.splitlines()[0] == "Monster,Activity,Item,Drops,Quantity,Encounters,DropRate,LastSeen"
+    assert any("Giant Bat,Looting,Bat Guano" in line for line in text.splitlines())
 
     filtered_resp = client.get("/api/export/analysis", params={"source": "Dire Wolf"})
     assert filtered_resp.status_code == 200
