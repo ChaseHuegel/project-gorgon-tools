@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { api } from "../api/client";
@@ -8,11 +8,12 @@ const distinct = {
   sources: ["Giant Bat", "Dire Wolf"],
   zones: ["Old Graveyard", "Fairy Glen"],
   items: ["Bat Guano", "Wolf Pelt", "Bat Wing", "Ground Twig"],
-  activities: ["Looting"],
+  activities: ["Looting", "Skinning"],
 };
 
 const rates = [
-  { monster: "Giant Bat", item: "Bat Guano", drops: 1, quantity: 1, encounters: 3, drop_rate: 0.3333 },
+  { monster: "Giant Bat", activity: "Looting", item: "Bat Guano", drops: 1, quantity: 1, encounters: 3, drop_rate: 0.3333 },
+  { monster: "Deer", activity: "Skinning", item: "Crude Animal Skin", drops: 1, quantity: 1, encounters: 1, drop_rate: 1.0 },
 ];
 const summary = [
   { zone: "Old Graveyard", monster: "Giant Bat", activity: "Looting", item: "Bat Guano", total_quantity: 1, drop_count: 1 },
@@ -74,6 +75,18 @@ describe("DashboardPage", () => {
     fireEvent.click(screen.getAllByRole("button", { name: /Bat Guano/ })[0]);
     expect(await screen.findByText(/Item \/ drop: Bat Guano/)).toBeInTheDocument();
     expect(api.itemDetail).toHaveBeenCalledWith("Bat Guano", undefined);
+  });
+
+  it("filters the rates table by activity", async () => {
+    renderPage();
+    fireEvent.click(screen.getByText("Rates & summary"));
+    const group = await screen.findByRole("group", { name: "Activity" });
+    fireEvent.click(within(group).getByRole("button", { name: "Skinning" }));
+    await waitFor(() =>
+      expect(api.dropRates).toHaveBeenLastCalledWith(
+        expect.objectContaining({ activity: "Skinning", status: "Linked" }),
+      ),
+    );
   });
 
   it("searches and drills down into a source from the find tab", async () => {

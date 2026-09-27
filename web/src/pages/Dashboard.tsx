@@ -225,7 +225,14 @@ export default function DashboardPage({ showExport = true }: { showExport?: bool
         />
       )}
       {tab === "rates" && (
-        <Rates rates={rates.data ?? []} summary={summary.data ?? []} onOpen={openDetail} />
+        <Rates
+          rates={rates.data ?? []}
+          summary={summary.data ?? []}
+          onOpen={openDetail}
+          activities={distinct.data?.activities ?? []}
+          activity={activity}
+          onSetActivity={(v) => setFilter("activity", v)}
+        />
       )}
       {tab === "find" && (
         <FindPanel onOpen={openDetail} sinceMs={sinceMs} axis={axis} />
@@ -241,6 +248,9 @@ export default function DashboardPage({ showExport = true }: { showExport?: bool
           onSetSources={setMatrixSources}
           onSetItems={setMatrixItems}
           onOpen={openDetail}
+          activities={distinct.data?.activities ?? []}
+          activity={activity}
+          onSetActivity={(v) => setFilter("activity", v)}
         />
       )}
     </Page>
@@ -485,14 +495,28 @@ function Rates({
   rates,
   summary,
   onOpen,
+  activities,
+  activity,
+  onSetActivity,
 }: {
   rates: DropRateRow[];
   summary: SummaryRow[];
   onOpen: (kind: DetailKind, name: string) => void;
+  activities: string[];
+  activity: string;
+  onSetActivity: (v: string) => void;
 }) {
   return (
     <div>
-      <h2 style={{ fontSize: "1rem", margin: "0 0 0.5rem" }}>Drop rates by monster and item</h2>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap", marginBottom: "0.5rem" }}>
+        <h2 style={{ fontSize: "1rem", margin: 0 }}>Drop rates by monster and item</h2>
+        <ActivitySegmented activities={activities} value={activity} onChange={onSetActivity} />
+      </div>
+      <p style={{ color: "var(--muted)", fontSize: "0.8rem", marginTop: 0 }}>
+        {activity
+          ? `Rate per monster and item for ${activity}. The denominator is encounters where ${activity.toLowerCase()} happened.`
+          : "Each row is one activity. The denominator of a row is the encounters where that activity happened."}
+      </p>
       <DataTable<DropRateRow>
         rows={rates}
         empty="No drop-rate data yet."
@@ -503,6 +527,12 @@ function Rates({
             header: "Monster",
             render: (r) => <LinkCell kind="source" name={r.monster} onOpen={onOpen}>{r.monster}</LinkCell>,
             sortValue: (r) => r.monster,
+          },
+          {
+            key: "activity",
+            header: "Activity",
+            render: (r) => <LinkCell kind="activity" name={r.activity} onOpen={onOpen}>{r.activity}</LinkCell>,
+            sortValue: (r) => r.activity,
           },
           {
             key: "item",
@@ -759,6 +789,9 @@ function MatrixPanel({
   onSetSources,
   onSetItems,
   onOpen,
+  activities,
+  activity,
+  onSetActivity,
 }: {
   rows: DropRateRow[];
   loading: boolean;
@@ -769,13 +802,32 @@ function MatrixPanel({
   onSetSources: (v: string[]) => void;
   onSetItems: (v: string[]) => void;
   onOpen: (kind: DetailKind, name: string) => void;
+  activities: string[];
+  activity: string;
+  onSetActivity: (v: string) => void;
 }) {
-  const maxRate = useMemo(() => rows.reduce((m, r) => Math.max(m, r.drop_rate), 0), [rows]);
+  const visibleRows = useMemo(
+    () => (activity ? rows.filter((r) => r.activity === activity) : rows),
+    [rows, activity],
+  );
+  const maxRate = useMemo(() => visibleRows.reduce((m, r) => Math.max(m, r.drop_rate), 0), [visibleRows]);
   const rateBy = useMemo(() => {
-    const map = new Map<string, DropRateRow>();
-    for (const r of rows) map.set(`${r.monster}\u0000${r.item}`, r);
+    const map = new Map<string, DropRateRow[]>();
+    for (const r of visibleRows) {
+      const key = `${r.monster}\u0000${r.item}`;
+      const list = map.get(key);
+      if (list) list.push(r);
+      else map.set(key, [r]);
+    }
     return map;
-  }, [rows]);
+  }, [visibleRows]);
+
+  function cellFor(src: string, col: string): DropRateRow | null {
+    const list = rateBy.get(`${src}\u0000${col}`);
+    if (!list || list.length === 0) return null;
+    if (activity) return list.find((r) => r.activity === activity) ?? null;
+    return list.slice().sort((a, b) => b.drops - a.drops)[0];
+  }
 
   function toggle(list: string[], value: string, set: (v: string[]) => void) {
     set(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
@@ -783,9 +835,12 @@ function MatrixPanel({
 
   return (
     <div>
-      <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginTop: 0 }}>
-        Pick monsters (rows) and items (columns) to compare drop rates side by side.
-      </p>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap", marginBottom: "0.5rem" }}>
+        <p style={{ color: "var(--muted)", fontSize: "0.85rem", margin: 0 }}>
+          Pick monsters (rows) and items (columns) to compare drop rates side by side.
+        </p>
+        <ActivitySegmented activities={activities} value={activity} onChange={onSetActivity} />
+      </div>
       <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", marginBottom: "0.75rem" }}>
         <PickList
           label={`Monsters (${sources.length})`}
@@ -811,7 +866,7 @@ function MatrixPanel({
       )}
       {loading && <p style={{ color: "var(--muted)" }}>Loading rates…</p>}
 
-      {rows.length > 0 && (
+      {visibleRows.length > 0 && (
         <div style={{ overflowX: "auto" }}>
           <table style={{ borderCollapse: "collapse", fontSize: "0.8rem" }}>
             <thead>
@@ -835,7 +890,7 @@ function MatrixPanel({
                     </button>
                   </th>
                   {items.map((col) => {
-                    const row = rateBy.get(`${src}\u0000${col}`);
+                    const row = cellFor(src, col);
                     const intensity = row && maxRate > 0 ? (row.drop_rate / maxRate) * 0.85 : 0;
                     return (
                       <td
@@ -846,8 +901,10 @@ function MatrixPanel({
                         }}
                         title={
                           row
-                            ? `${src} → ${col}: ${fmtPct(row.drop_rate)} (${row.drops} drops / ${row.encounters} encounters)`
-                            : `${src} → ${col}: no recorded drops`
+                            ? activity
+                              ? `${src} → ${col}: ${fmtPct(row.drop_rate)} (${row.drops} drops / ${row.encounters} ${activity.toLowerCase()} encounters)`
+                              : `${src} → ${col}: ${(rateBy.get(`${src}\u0000${col}`) ?? []).map((r) => `${r.activity} ${fmtPct(r.drop_rate)} (${r.drops}/${r.encounters})`).join(", ")}`
+                            : `${src} → ${col}: no recorded drops for this activity`
                         }
                       >
                         {row ? fmtPct(row.drop_rate) : "—"}
@@ -860,6 +917,31 @@ function MatrixPanel({
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+function ActivitySegmented({
+  activities,
+  value,
+  onChange,
+}: {
+  activities: string[];
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const options = ["", ...activities.sort()];
+  return (
+    <div style={{ display: "flex", gap: "0.25rem", flexWrap: "wrap" }} role="group" aria-label="Activity">
+      {options.map((o) => (
+        <button
+          key={o || "all"}
+          onClick={() => onChange(o)}
+          style={{ ...segBtnStyle, ...(value === o ? activeSegStyle : {}) }}
+        >
+          {o || "All"}
+        </button>
+      ))}
     </div>
   );
 }
@@ -1054,6 +1136,7 @@ function DetailTables({
           rows={(data as SourceDetail).items}
           columns={[
             { key: "item", header: "Item", render: (r: DropRateRow) => <LinkCell kind="item" name={r.item} onOpen={onOpen}>{r.item}</LinkCell> },
+            { key: "activity", header: "Activity", render: (r: DropRateRow) => <LinkCell kind="activity" name={r.activity} onOpen={onOpen}>{r.activity}</LinkCell> },
             { key: "drops", header: "Drops", render: (r) => String(r.drops), align: "right", sortValue: (r) => r.drops },
             { key: "enc", header: "Encounters", render: (r) => String(r.encounters), align: "right" },
             { key: "rate", header: "Rate", render: (r) => fmtPct(r.drop_rate), align: "right", sortValue: (r) => r.drop_rate },
@@ -1066,6 +1149,7 @@ function DetailTables({
           rows={(data as ItemDetail).sources}
           columns={[
             { key: "monster", header: "Source", render: (r: DropRateRow) => <LinkCell kind="source" name={r.monster} onOpen={onOpen}>{r.monster}</LinkCell> },
+            { key: "activity", header: "Activity", render: (r: DropRateRow) => <LinkCell kind="activity" name={r.activity} onOpen={onOpen}>{r.activity}</LinkCell> },
             { key: "drops", header: "Drops", render: (r) => String(r.drops), align: "right", sortValue: (r) => r.drops },
             { key: "enc", header: "Encounters", render: (r) => String(r.encounters), align: "right" },
             { key: "rate", header: "Rate", render: (r) => fmtPct(r.drop_rate), align: "right", sortValue: (r) => r.drop_rate },
@@ -1089,6 +1173,7 @@ function DetailTables({
           rows={(data as ZoneDetail).sources}
           columns={[
             { key: "monster", header: "Source", render: (r: DropRateRow) => <LinkCell kind="source" name={r.monster} onOpen={onOpen}>{r.monster}</LinkCell> },
+            { key: "activity", header: "Activity", render: (r: DropRateRow) => <LinkCell kind="activity" name={r.activity} onOpen={onOpen}>{r.activity}</LinkCell> },
             { key: "drops", header: "Drops", render: (r) => String(r.drops), align: "right", sortValue: (r) => r.drops },
             { key: "enc", header: "Encounters", render: (r) => String(r.encounters), align: "right", sortValue: (r) => r.encounters },
             { key: "rate", header: "Rate", render: (r) => fmtPct(r.drop_rate), align: "right", sortValue: (r) => r.drop_rate },
@@ -1427,6 +1512,20 @@ const miniBtnStyle: React.CSSProperties = {
   padding: "0.15rem 0.45rem",
   cursor: "pointer",
   fontSize: "0.75rem",
+};
+const segBtnStyle: React.CSSProperties = {
+  border: "1px solid var(--border)",
+  background: "transparent",
+  color: "var(--muted)",
+  borderRadius: 6,
+  padding: "0.2rem 0.6rem",
+  cursor: "pointer",
+  fontSize: "0.75rem",
+};
+const activeSegStyle: React.CSSProperties = {
+  color: "var(--accent)",
+  borderColor: "var(--accent)",
+  background: "rgba(79, 156, 249, 0.12)",
 };
 const heatHeaderStyle: React.CSSProperties = {
   padding: "0.4rem 0.5rem",

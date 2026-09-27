@@ -78,6 +78,7 @@ export interface SummaryRow {
 
 export interface DropRateRow {
   monster: string;
+  activity: string;
   item: string;
   drops: number;
   quantity: number;
@@ -242,6 +243,8 @@ export interface ReplayResult {
   parsed_files: number;
   loot_kept: number;
   loot_filtered: number;
+  encounters?: number;
+  encounter_activities?: number;
 }
 
 export interface MigrateResult {

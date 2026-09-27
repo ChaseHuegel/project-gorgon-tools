@@ -12,10 +12,13 @@ export default function About() {
         <h2 style={{ fontSize: "0.9rem", margin: "0 0 0.5rem" }}>Reading the numbers</h2>
         <ul style={{ margin: 0, paddingLeft: "1.25rem", lineHeight: 1.6 }}>
           <li>
-            <strong>Encounters</strong> counts the distinct fights that produced drops for a monster.
+            <strong>Encounters</strong> counts the distinct corpse encounters for a monster where
+            the given activity happened. For example, a skin drop divides by the encounters where
+            the corpse was skinned.
           </li>
           <li>
-            <strong>Drop rate</strong> is drops divided by encounters. Small samples are marked Low.
+            <strong>Drop rate</strong> is drops divided by encounters for the same activity. Small
+            samples are marked Low.
           </li>
           <li>A row linked via a corpse search is corroborated; a target-only link carries less certainty.</li>
         </ul>
