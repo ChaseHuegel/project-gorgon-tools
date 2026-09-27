@@ -45,6 +45,9 @@ def test_plan_payload_carries_effective_override(tmp_path: Path) -> None:
         assert first["payload"]["captured_at"] > 0
         # Encounter identity rides along so remote drop rates keep working.
         assert "encounter_uuid" in first["payload"]
+        # The encounter's activity ledger rides along for remote rate denominators.
+        acts = first["payload"]["encounter_activities"]
+        assert {"Looting", "Skinning"}.issubset({a["activity"] for a in acts})
     finally:
         conn.close()
 

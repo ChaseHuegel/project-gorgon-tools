@@ -47,6 +47,7 @@ PUBLISH_FIELDS: dict[str, str] = {
     "missed": "bool",
     "killer_json": "str|None",
     "encounter_uuid": "str|None",
+    "encounter_activities": "list|None",
 }
 
 _SELECT_SQL = (
@@ -54,7 +55,7 @@ _SELECT_SQL = (
     " ld.status, ld.lag_ms, ld.linked_via, ld.monster_name, ld.monster_lag_ms,"
     " ld.target_name, ld.target_lag_ms, ld.corroborated_by_search,"
     " ld.instance_id, ld.entity_id, ld.item_code_id, ld.item_display,"
-    " ld.missed, ld.killer_json, e.encounter_uuid,"
+    " ld.missed, ld.killer_json, e.encounter_uuid, e.id AS encounter_id,"
     " ov.source AS ov_source, ov.status AS ov_status, ov.activity AS ov_activity"
     " FROM loot_drops ld"
     " LEFT JOIN encounters e ON e.id = ld.encounter_id"
@@ -85,6 +86,20 @@ def plan_payload(conn: Any, ids: list[int]) -> list[dict[str, Any]]:
     marks = ",".join("?" for _ in ids)
     rows = conn.execute(_SELECT_SQL.format(marks=marks), ids).fetchall()
     by_id = {int(r["id"]): r for r in rows}
+
+    enc_ids = sorted({int(r["encounter_id"]) for r in rows if r["encounter_id"] is not None})
+    activities_by_enc: dict[int, list[dict[str, Any]]] = {}
+    if enc_ids:
+        enc_marks = ",".join("?" for _ in enc_ids)
+        for act in conn.execute(
+            "SELECT encounter_id, activity, performed_at FROM encounter_activities"
+            f" WHERE encounter_id IN ({enc_marks}) ORDER BY performed_at",
+            enc_ids,
+        ):
+            activities_by_enc.setdefault(int(act["encounter_id"]), []).append(
+                {"activity": act["activity"], "performed_at": act["performed_at"]}
+            )
+
     planned: list[dict[str, Any]] = []
     for loot_drop_id in ids:
         r = by_id.get(loot_drop_id)
@@ -114,6 +129,8 @@ def plan_payload(conn: Any, ids: list[int]) -> list[dict[str, Any]]:
         }
         if r["encounter_uuid"]:
             payload["encounter_uuid"] = r["encounter_uuid"]
+            if r["encounter_id"] is not None:
+                payload["encounter_activities"] = activities_by_enc.get(int(r["encounter_id"]), [])
         planned.append({"loot_drop_id": loot_drop_id, "payload": payload})
     return planned
 

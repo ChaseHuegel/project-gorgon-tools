@@ -127,6 +127,18 @@ def _validate_row(raw: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(value, bool):
                 raise ValueError(f"{field} must be a bool")
             continue
+        if field == "encounter_activities":
+            if not isinstance(value, list):
+                raise ValueError("encounter_activities must be a list")
+            for entry in value:
+                if not isinstance(entry, dict):
+                    raise ValueError("each encounter activity must be an object")
+                if not isinstance(entry.get("activity"), str) or not entry["activity"].strip():
+                    raise ValueError("each encounter activity needs a non-empty 'activity'")
+                performed = entry.get("performed_at")
+                if not isinstance(performed, int) or isinstance(performed, bool) or performed <= 0:
+                    raise ValueError("each encounter activity needs a positive integer 'performed_at'")
+            continue
         if expected in ("int", "int|None"):
             if not isinstance(value, int) or isinstance(value, bool):
                 raise ValueError(f"{field} must be {expected}")
@@ -145,15 +157,23 @@ def _ingest_row(conn: Any, session_id: int, row: dict[str, Any]) -> str:
     encounter_uuid = row.get("encounter_uuid")
     if encounter_uuid:
         conn.execute(
-            "INSERT OR IGNORE INTO encounters (session_id, encounter_uuid, monster, started_at)"
-            " VALUES (?, ?, ?, ?)",
-            (session_id, encounter_uuid, row["source"], row["captured_at"]),
+            "INSERT OR IGNORE INTO encounters (session_id, encounter_uuid, monster, started_at, zone)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (session_id, encounter_uuid, row["source"], row["captured_at"], row["zone"]),
         )
         found = conn.execute(
             "SELECT id FROM encounters WHERE encounter_uuid = ?", (encounter_uuid,)
         ).fetchone()
         if found is not None:
             encounter_id = int(found["id"])
+            for entry in row.get("encounter_activities") or []:
+                db_mod.insert_encounter_activity(
+                    conn,
+                    session_id,
+                    encounter_id,
+                    entry["activity"],
+                    entry["performed_at"],
+                )
 
     existing = conn.execute(
         "SELECT id FROM loot_drops WHERE captured_at = ? AND source = ? AND item = ? AND amount = ?",

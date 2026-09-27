@@ -168,6 +168,13 @@ def test_ingest_validates_rows(tmp_path: Path) -> None:
     unknown = client.post("/api/ingest/loot", json={"rows": [_valid_row(bogus=1)]}, headers=headers)
     assert unknown.status_code == 422
 
+    bad_activities = client.post(
+        "/api/ingest/loot",
+        json={"rows": [_valid_row(encounter_activities=[{"activity": ""}])]},
+        headers=headers,
+    )
+    assert bad_activities.status_code == 422
+
     too_many = client.post("/api/ingest/loot", json={"rows": [_valid_row()] * 501}, headers=headers)
     assert too_many.status_code == 422
 
@@ -199,7 +206,13 @@ def test_ingest_carries_encounter_identity_for_rates(tmp_path: Path) -> None:
     client = _public_app(tmp_path, ingest=True)
     headers = {"Authorization": "Bearer sekret"}
 
-    row = _valid_row(source="Test Goblin", item="Test Fang", amount=1, encounter_uuid="gob-1")
+    row = _valid_row(
+        source="Test Goblin",
+        item="Test Fang",
+        amount=1,
+        encounter_uuid="gob-1",
+        encounter_activities=[{"activity": "Looting", "performed_at": 1_700_000_000_000}],
+    )
     resp = client.post(
         "/api/ingest/loot",
         json={
