@@ -155,7 +155,8 @@ class DbWriter:
                 self.conn, self.session_id, drop.encounter_uuid, drop.source, drop.time_ms
             )
             self._encounter_ids[drop.encounter_uuid] = encounter_id
-        self._encounter_end[drop.encounter_uuid] = drop.time_ms
+        # An explicit EncounterEnd (bury, roll-over) wins over the drop time.
+        self._encounter_end.setdefault(drop.encounter_uuid, drop.time_ms)
         self._learn_item(drop)
         return db.insert_loot_drop(
             self.conn,

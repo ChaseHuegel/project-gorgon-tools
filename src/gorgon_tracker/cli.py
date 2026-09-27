@@ -370,6 +370,38 @@ def update_catalog(
 
 
 @app.command()
+def backfill_encounters(
+    ctx: typer.Context,
+    session: int | None = typer.Option(  # noqa: B008 - required by typer
+        None, "--session", help="Backfill only this session id (default: all sessions)."
+    ),
+    db_path: str | None = typer.Option(None, "--db", help="Override the SQLite database path."),
+) -> None:
+    """Rebuild encounter rows and per-encounter activities from raw events."""
+    from . import backfill as backfill_mod
+
+    _apply_db(ctx, db_path)
+    conn = _connect(ctx.obj.db.path)
+    try:
+        results = backfill_mod.backfill_all(conn, session_id=session)
+    finally:
+        conn.close()
+    table = Table(title="Backfilled sessions")
+    table.add_column("session")
+    table.add_column("encounters created")
+    table.add_column("encounters matched")
+    table.add_column("activities")
+    for result in results:
+        table.add_row(
+            str(result["session_id"]),
+            str(result["encounters_created"]),
+            str(result["encounters_matched"]),
+            str(result["activities"]),
+        )
+    console.print(table)
+
+
+@app.command()
 def export(
     ctx: typer.Context,
     since: str | None = typer.Option(None, help="Only export loot_drops at or after this ISO time."),
