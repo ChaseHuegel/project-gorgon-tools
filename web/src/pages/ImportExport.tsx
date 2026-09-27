@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, exportUrl } from "../api/client";
-import type { CatalogInfo, NamesInfo } from "../api/types";
+import type { BackfillResult, CatalogInfo, NamesInfo } from "../api/types";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { FilePicker } from "../components/FilePicker";
 import { FormField, TextInput } from "../components/FormField";
@@ -26,6 +26,8 @@ export default function ImportExportPage() {
   const [busy, setBusy] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [backfillBusy, setBackfillBusy] = useState(false);
+  const [backfillResult, setBackfillResult] = useState<BackfillResult | null>(null);
 
   function push(kind: string, text: string, ok = true) {
     setLog((l) => [{ kind, text, ok }, ...l].slice(0, 12));
@@ -110,6 +112,20 @@ export default function ImportExportPage() {
       push("migrate", e instanceof Error ? e.message : String(e), false);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function runBackfill() {
+    setBackfillBusy(true);
+    try {
+      const res = await api.backfill();
+      setBackfillResult(res);
+      const total = res.sessions.reduce((a: number, s) => a + s.activities, 0);
+      push("backfill", `Backfilled ${res.sessions.length} session(s), ${total} activity rows`);
+    } catch (e) {
+      push("backfill", e instanceof Error ? e.message : String(e), false);
+    } finally {
+      setBackfillBusy(false);
     }
   }
 
@@ -232,6 +248,30 @@ export default function ImportExportPage() {
           {migBytes.length} uploaded file(s) · {migPaths.length} server path(s)
         </p>
         <button onClick={runMigrate} disabled={busy} style={btnStyle}>{busy ? "…" : "Run migrate"}</button>
+      </Card>
+
+      <Card title="Backfill encounter ledger">
+        <p style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
+          Rebuild encounter and per-activity records from raw events. Do this once after upgrading
+          when sessions predate per-activity rates, including legacy-migrated loot. Rows are added
+          only where they are missing, so re-running is safe.
+        </p>
+        <button onClick={runBackfill} disabled={backfillBusy} style={btnStyle}>
+          {backfillBusy ? "…" : "Backfill encounters"}
+        </button>
+        {backfillResult && (
+          <div style={{ marginTop: "0.6rem", fontSize: "0.85rem" }}>
+            {backfillResult.sessions.length === 0 && (
+              <p style={{ color: "var(--muted)" }}>No sessions with raw data.</p>
+            )}
+            {backfillResult.sessions.map((s) => (
+              <p key={s.session_id} style={{ margin: "0.15rem 0" }}>
+                Session #{s.session_id}: {s.encounters_created} encounters created, {s.encounters_matched} matched,
+                {s.derived > 0 ? ` ${s.derived} derived` : ""}, {s.activities} activity rows
+              </p>
+            ))}
+          </div>
+        )}
       </Card>
 
       <Card title="Danger zone">

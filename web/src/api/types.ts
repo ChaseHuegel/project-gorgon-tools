@@ -83,7 +83,7 @@ export interface DropRateRow {
   drops: number;
   quantity: number;
   encounters: number;
-  drop_rate: number;
+  drop_rate: number | null;
   last_seen?: number;
 }
 
@@ -249,6 +249,18 @@ export interface ReplayResult {
 
 export interface MigrateResult {
   imported: Array<{ file: string; session_id: number; kind: string; imported: number }>;
+}
+
+export interface BackfillSessionResult {
+  session_id: number;
+  encounters_created: number;
+  encounters_matched: number;
+  derived: number;
+  activities: number;
+}
+
+export interface BackfillResult {
+  sessions: BackfillSessionResult[];
 }
 
 export interface ChatLine {

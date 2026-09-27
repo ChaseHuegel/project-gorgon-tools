@@ -67,13 +67,22 @@ def build_control_router(db_path: str, config_path: str | None = None) -> APIRou
 
     @router.get("/status")
     def status() -> dict[str, Any]:
+        from . import backfill as backfill_mod
+
         cfg = _cfg()
         conn = db.connect(db_path)
         db.migrate(conn)
         try:
             overview = db.status_overview(conn)
+            pending = backfill_mod.pending_ledger_sessions(conn)
         finally:
             conn.close()
+        warnings = control.setup_warnings(cfg)
+        if pending:
+            warnings.append(
+                f"{pending} session(s) have loot without an activity ledger. "
+                "Run `gorgon-tracker backfill-encounters` or use the Import/Export page."
+            )
         return {
             "db_path": str(Path(db_path).resolve()),
             "config_path": str(config_write_mod.active_config_path(config_path)),
@@ -82,7 +91,7 @@ def build_control_router(db_path: str, config_path: str | None = None) -> APIRou
             "open_session_id": overview["open_session_id"],
             "open_session_counts": overview["open_session_counts"],
             "daemon": control.daemon_status(db_path),
-            "warnings": control.setup_warnings(cfg),
+            "warnings": warnings,
             "publish": {
                 "configured": cfg.publish.enabled and bool(cfg.publish.url) and bool(cfg.publish.token),
                 "url": cfg.publish.url,
@@ -221,6 +230,18 @@ def build_control_router(db_path: str, config_path: str | None = None) -> APIRou
         finally:
             conn.close()
         return {"imported": results}
+
+    @router.post("/backfill")
+    def backfill() -> dict[str, Any]:
+        from . import backfill as backfill_mod
+
+        conn = db.connect(db_path)
+        db.migrate(conn)
+        try:
+            results = backfill_mod.backfill_all(conn)
+        finally:
+            conn.close()
+        return {"sessions": results}
 
     @router.get("/export")
     def export(since: str | None = None) -> Response:

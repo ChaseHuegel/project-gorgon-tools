@@ -89,6 +89,16 @@ describe("DashboardPage", () => {
     );
   });
 
+  it("renders an em dash for a missing rate", async () => {
+    vi.spyOn(api, "dropRates").mockResolvedValue([
+      { monster: "Giant Bat", activity: "Looting", item: "Bat Guano", drops: 1, quantity: 1, encounters: 0, drop_rate: null },
+    ]);
+    renderPage();
+    fireEvent.click(screen.getByText("Rates & summary"));
+    const dash = await screen.findAllByText("—");
+    expect(dash.length).toBeGreaterThan(0);
+  });
+
   it("searches and drills down into a source from the find tab", async () => {
     vi.spyOn(api, "search").mockResolvedValue({
       sources: [{ name: "Giant Bat", drops: 2, encounters: 3 }],

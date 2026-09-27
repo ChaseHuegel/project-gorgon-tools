@@ -553,7 +553,7 @@ function Rates({
               </span>
             ),
             align: "right",
-            sortValue: (r) => r.drop_rate,
+            sortValue: (r) => r.drop_rate ?? -1,
           },
           { key: "last", header: "Last seen", render: (r) => fmtTime(r.last_seen), sortValue: (r) => r.last_seen ?? 0 },
         ]}
@@ -810,7 +810,7 @@ function MatrixPanel({
     () => (activity ? rows.filter((r) => r.activity === activity) : rows),
     [rows, activity],
   );
-  const maxRate = useMemo(() => visibleRows.reduce((m, r) => Math.max(m, r.drop_rate), 0), [visibleRows]);
+  const maxRate = useMemo(() => visibleRows.reduce((m, r) => Math.max(m, r.drop_rate ?? 0), 0), [visibleRows]);
   const rateBy = useMemo(() => {
     const map = new Map<string, DropRateRow[]>();
     for (const r of visibleRows) {
@@ -891,7 +891,7 @@ function MatrixPanel({
                   </th>
                   {items.map((col) => {
                     const row = cellFor(src, col);
-                    const intensity = row && maxRate > 0 ? (row.drop_rate / maxRate) * 0.85 : 0;
+                    const intensity = row && maxRate > 0 ? ((row.drop_rate ?? 0) / maxRate) * 0.85 : 0;
                     return (
                       <td
                         key={col}
@@ -1139,7 +1139,7 @@ function DetailTables({
             { key: "activity", header: "Activity", render: (r: DropRateRow) => <LinkCell kind="activity" name={r.activity} onOpen={onOpen}>{r.activity}</LinkCell> },
             { key: "drops", header: "Drops", render: (r) => String(r.drops), align: "right", sortValue: (r) => r.drops },
             { key: "enc", header: "Encounters", render: (r) => String(r.encounters), align: "right" },
-            { key: "rate", header: "Rate", render: (r) => fmtPct(r.drop_rate), align: "right", sortValue: (r) => r.drop_rate },
+            { key: "rate", header: "Rate", render: (r) => fmtPct(r.drop_rate), align: "right", sortValue: (r) => r.drop_rate ?? -1 },
           ]}
         />
       )}
@@ -1152,7 +1152,7 @@ function DetailTables({
             { key: "activity", header: "Activity", render: (r: DropRateRow) => <LinkCell kind="activity" name={r.activity} onOpen={onOpen}>{r.activity}</LinkCell> },
             { key: "drops", header: "Drops", render: (r) => String(r.drops), align: "right", sortValue: (r) => r.drops },
             { key: "enc", header: "Encounters", render: (r) => String(r.encounters), align: "right" },
-            { key: "rate", header: "Rate", render: (r) => fmtPct(r.drop_rate), align: "right", sortValue: (r) => r.drop_rate },
+            { key: "rate", header: "Rate", render: (r) => fmtPct(r.drop_rate), align: "right", sortValue: (r) => r.drop_rate ?? -1 },
           ]}
         />
       )}
@@ -1176,7 +1176,7 @@ function DetailTables({
             { key: "activity", header: "Activity", render: (r: DropRateRow) => <LinkCell kind="activity" name={r.activity} onOpen={onOpen}>{r.activity}</LinkCell> },
             { key: "drops", header: "Drops", render: (r) => String(r.drops), align: "right", sortValue: (r) => r.drops },
             { key: "enc", header: "Encounters", render: (r) => String(r.encounters), align: "right", sortValue: (r) => r.encounters },
-            { key: "rate", header: "Rate", render: (r) => fmtPct(r.drop_rate), align: "right", sortValue: (r) => r.drop_rate },
+            { key: "rate", header: "Rate", render: (r) => fmtPct(r.drop_rate), align: "right", sortValue: (r) => r.drop_rate ?? -1 },
           ]}
         />
       )}
@@ -1333,7 +1333,8 @@ function Muted({ children }: { children: React.ReactNode }) {
   return <span style={{ color: "var(--muted)" }}>{children}</span>;
 }
 
-function fmtPct(rate: number): string {
+function fmtPct(rate: number | null | undefined): string {
+  if (rate == null || Number.isNaN(rate)) return "—";
   return `${(rate * 100).toFixed(2)}%`;
 }
 

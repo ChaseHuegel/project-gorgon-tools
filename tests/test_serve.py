@@ -150,6 +150,20 @@ def test_zone_and_stats_endpoints(tmp_path: Path) -> None:
     assert filtered["sources"] == 1
 
 
+def test_drop_rates_null_when_ledger_empty(tmp_path: Path) -> None:
+    db_path = _populated(tmp_path)
+    conn = db.connect(db_path)
+    db.migrate(conn)
+    conn.execute("DELETE FROM encounter_activities")
+    conn.commit()
+    conn.close()
+
+    client = TestClient(serve.build_app(str(db_path)))
+    rates = client.get("/api/drop-rates").json()
+    assert len(rates) == 5
+    assert all(r["encounters"] == 0 and r["drop_rate"] is None for r in rates)
+
+
 def test_drop_rates_since_offset_and_multi(tmp_path: Path) -> None:
     from .scenario import at
 

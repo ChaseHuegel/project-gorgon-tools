@@ -1,5 +1,6 @@
 import type {
   ActivityDetail,
+  BackfillResult,
   CatalogInfo,
   CatalogUpdateResult,
   ChatTail,
@@ -209,6 +210,8 @@ export const api = {
       method: "POST",
       body: buildMigrateForm(form, kind),
     }),
+
+  backfill: () => request<BackfillResult>("/api/backfill", { method: "POST" }),
 
   files: (path: string) => request<FileListing>(`/api/files?path=${encodeURIComponent(path)}`),
 

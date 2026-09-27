@@ -24,6 +24,58 @@ def _config_file(tmp_path: Path) -> Path:
 # --- ports -------------------------------------------------------------------
 
 
+def test_status_warns_about_missing_ledger(tmp_path: Path, monkeypatch) -> None:
+    from gorgon_tracker.config import TrackerConfig
+    from gorgon_tracker.replay import expand_inputs, run_replay
+
+    files = scenario.build(tmp_path)
+    conn = db.connect(str(tmp_path / "data/gorgon.db"))
+    db.migrate(conn)
+    run_replay(conn, TrackerConfig(), expand_inputs([files.capture_json, files.chat_log]))
+    conn.close()
+
+    client = _client(tmp_path)
+    warnings = client.get("/api/status").json()["warnings"]
+    assert not any("activity ledger" in w for w in warnings)
+
+    conn = db.connect(str(tmp_path / "data/gorgon.db"))
+    db.migrate(conn)
+    conn.execute("DELETE FROM encounter_activities")
+    conn.commit()
+    conn.close()
+
+    warnings = client.get("/api/status").json()["warnings"]
+    assert any("activity ledger" in w for w in warnings)
+    assert "backfill-encounters" in " ".join(warnings)
+
+
+def test_backfill_endpoint_rebuilds_ledger(tmp_path: Path, monkeypatch) -> None:
+    from gorgon_tracker.config import TrackerConfig
+    from gorgon_tracker.replay import expand_inputs, run_replay
+
+    files = scenario.build(tmp_path)
+    conn = db.connect(str(tmp_path / "data/gorgon.db"))
+    db.migrate(conn)
+    run_replay(conn, TrackerConfig(), expand_inputs([files.capture_json, files.chat_log]))
+    conn.execute("DELETE FROM encounter_activities")
+    conn.commit()
+    conn.close()
+
+    client = _client(tmp_path)
+    assert any("activity ledger" in w for w in client.get("/api/status").json()["warnings"])
+
+    resp = client.post("/api/backfill")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert len(body["sessions"]) == 1
+    session = body["sessions"][0]
+    assert session["session_id"] == 1
+    assert session["activities"] >= 15
+
+    warnings = client.get("/api/status").json()["warnings"]
+    assert not any("activity ledger" in w for w in warnings)
+
+
 def test_ports_discover_reports_not_found(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr("gorgon_tracker.ports.discover_ports", lambda: (set(), set()))
     resp = _client(tmp_path).post("/api/ports/discover")
