@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from . import daemon
+from .binpath import resolve_tesseract, tesseract_hint
 from .config import TrackerConfig
 
 
@@ -87,8 +88,11 @@ def setup_warnings(cfg: TrackerConfig) -> list[str]:
     warnings: list[str] = []
     capture_ok = cfg.capture.enabled and has_capture_ok(cfg)
     chat_ok = cfg.chat.tail and bool(cfg.chat.log_dir)
-    ocr_ok = cfg.ocr.enabled
+    tesseract_ok = resolve_tesseract(cfg.ocr.tesseract_path) is not None
+    ocr_ok = cfg.ocr.enabled and tesseract_ok
 
+    if cfg.ocr.enabled and not tesseract_ok:
+        warnings.append(f"tesseract is missing. {tesseract_hint()}")
     if cfg.capture.enabled and not capture_ok:
         warnings.append(
             "Packet capture will start but can't detect the game yet; launch Project Gorgon so "

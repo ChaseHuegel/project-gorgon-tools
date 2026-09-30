@@ -10,6 +10,7 @@ This index maps subjects to their docs. It is the recommended first read for age
 | As-built architecture, module map, CLI table, DB | [`docs/architecture.md`](architecture.md) |
 | Development workflows, config, tests, code style | [`docs/development.md`](development.md) |
 | Web API (all endpoints, SSE, payloads) | [`docs/api.md`](api.md) |
+| Build standalone Linux/Windows executables | [`docs/packaging.md`](packaging.md) |
 | Chat log line format | [`docs/specs/chat-log.md`](specs/chat-log.md) |
 | Unity `Player.log` format | [`docs/specs/player-log.md`](specs/player-log.md) |
 | Packet format (corpse-search frames) | [`docs/specs/packets.md`](specs/packets.md) |

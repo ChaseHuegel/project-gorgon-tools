@@ -11,8 +11,8 @@ import re
 import subprocess
 import threading
 from collections.abc import Callable, Iterator
-from pathlib import Path
 
+from ..binpath import resolve_tshark, tshark_hint
 from ..config import TrackerConfig
 from ..correlator import SourceEvent
 from ..parsers import packets
@@ -163,8 +163,8 @@ def produce(
 
 def can_run(cfg: TrackerConfig) -> bool:
     """Best-effort check that tshark is available and a filter is resolvable."""
-    if not Path(cfg.capture.tshark_path).is_file():
-        raise RuntimeError(f"tshark not found at {cfg.capture.tshark_path}")
+    if resolve_tshark(cfg.capture.tshark_path) is None:
+        raise RuntimeError(f"tshark is missing. {tshark_hint()}")
     if cfg.capture.bpf.strip() or cfg.capture.ports:
         return True
     return discover_bpf() is not None

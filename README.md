@@ -58,6 +58,17 @@ sudo setcap cap_net_raw,cap_net_admin=eip $(readlink -f "$(which tshark)")
 
 OCR: `sudo apt install tesseract-ocr` (add `tesseract-ocr-eng` if data is separate).
 
+### Standalone executables
+
+Prebuilt one-file executables for Linux and Windows are available. The build
+uses Nuitka and runs in CI. You still need tshark and tesseract installed on
+the target machine; the executable detects them and prints install hints.
+Build and distribution details: `docs/packaging.md`.
+
+```sh
+python tools/build_exe.py
+```
+
 ## Quickstart
 
 ```sh

@@ -22,6 +22,8 @@ pytest
 
 Config: ruff targets `py311`, line-length `120`, rules `E, F, I, UP, B, SIM` (`pyproject.toml:69-75`). Mypy runs strict on the package (`pyproject.toml:60-67`).
 
+Binaries for Linux and Windows build with Nuitka via `tools/build_exe.py`. CI builds them in `.github/workflows/build.yml`. Full procedure: `docs/packaging.md`.
+
 ## Frontend (Node)
 
 The `web/` SPA is optional to develop; the built bundle ships in the pip package. Install Node 20/22:

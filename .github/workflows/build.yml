@@ -1,0 +1,37 @@
+name: build
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: gorgon-tracker-linux
+            binary: gorgon-tracker
+          - os: windows-latest
+            artifact: gorgon-tracker-windows
+            binary: gorgon-tracker.exe
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[serve]" nuitka
+      - name: Build
+        run: python tools/build_exe.py
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/bundle/${{ matrix.binary }}
+          retention-days: 14
