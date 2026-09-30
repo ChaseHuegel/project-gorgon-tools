@@ -8,12 +8,11 @@ gorgon-tracker captures Project Gorgon game data at runtime, correlates loot pic
 
 ```text
 sources (producer threads)              pipeline thread (single SQLite writer)
-   packet  (tshark -T fields)    ─┐
    chat    (ChatLogs tail)      ───┤
    playerlog (Player.log tail) ────┼─► queue(10000) ─► parser ─► Correlator ─► DbWriter
    ocr zone (tesseract)        ────┤                                          │
    ocr target (tesseract)      ─┘                                          SQLite (WAL)
-                                                                                │
+                                                                                 │
 read side:  serve / web (FastAPI) ─ blend read API + SSE over the same DB ─────┘
             web   = read API + control API + full SPA on the local DB
             serve = read API + public SPA + optional token ingest (public DB)
@@ -53,19 +52,15 @@ All modules in `src/gorgon_tracker/`.
 | Module | Role | Spec |
 |---|---|---|
 | `pipeline.py` | Wires producers → bounded queue → dispatch. Single SQLite connection, 1 s commit cadence, graceful drain on stop. | — |
-| `sources/tshark_live.py` | Live packet frames (`tshark -T fields`). | `docs/specs/packets.md` |
 | `sources/chat_tail.py` | Tails the newest chat log; handles rotation by dev+inode. | `docs/specs/chat-log.md` |
 | `sources/player_log.py` | Tails `Player.log`; one persistent parser spans polls; optional `Player-prev.log` backfill. | `docs/specs/player-log.md` |
 | `sources/ocr.py` | Zone/target OCR producers; change detection + heartbeat. | `docs/specs/ocr.md` |
 | `parsers/chat.py` | Chat line → `LootEvent`/`BuryEvent`/`ActivityEvent`. | `docs/specs/chat-log.md` |
-| `parsers/packets.py` | tshark JSON frames → `SourceEvent`; hex decode + cleanup. | `docs/specs/packets.md` |
 | `parsers/playerlog.py` | `Player.log` lines → correlation events; missed-loot window. | `docs/specs/player-log.md` |
 | `parsers/ocr.py` | mss/portal grab, grayscale, tesseract, sanitize. | `docs/specs/ocr.md` |
 | `parsers/csvs.py` | Legacy zones/targets/loot CSV readers. | `docs/specs/csv-formats.md` |
-| `ports.py` | Game port discovery via `ss`; builds `tcp.port == X or ...` filter. | `docs/specs/packets.md` |
-| `replay.py` | Offline ingest of pcaps/JSON/chat/Player.log/CSV through the same parsers + correlator. | `docs/specs/correlation.md` |
-| `migrate.py` | Import legacy PowerShell outputs (CSV + parsed JSON). | `docs/specs/csv-formats.md` |
-| `sniff_inspect.py` | Packet investigation; inventories plaintext strings; raw pcap retained. | `docs/specs/packets.md` |
+| `replay.py` | Offline ingest of chat/Player.log/CSV through the same parsers + correlator. | `docs/specs/correlation.md` |
+| `migrate.py` | Import legacy PowerShell outputs (CSV + parsed chat JSON). | `docs/specs/csv-formats.md` |
 
 ### Correlation and persistence
 
@@ -125,10 +120,8 @@ Mapper: each `@app.command()` in `src/gorgon_tracker/cli.py` is a `gorgon-tracke
 | `run` | Live capture pipeline (foreground or `--daemon`). |
 | `status` | Session table + per-source event counts. |
 | `stop` | SIGTERM a running daemon by pidfile. |
-| `find-ports` | Detect game ports → BPF filter. |
 | `calibrate` | Tune an OCR region interactively. |
-| `sniff-inspect` | Capture game traffic; inventory plaintext strings. |
-| `replay` | Offline-ingest historical captures into a retrospective session. |
+| `replay` | Offline-ingest historical logs into a retrospective session. |
 | `migrate` | Import legacy PowerShell outputs. |
 | `backfill-encounters` | Rebuild encounter rows and the activity ledger from `raw_events` for existing sessions. |
 | `update-names` | Fetch name lists from the wiki. |
@@ -162,7 +155,7 @@ Key files (`web/src/`):
 | `pages/About.tsx` | Public data description (public). |
 | `pages/Config.tsx` | Sectioned config forms via dotted-key diff. |
 | `pages/Calibrate.tsx` | Snapshot, drag region, OCR preview, save. |
-| `pages/ImportExport.tsx` | Replay/migrate upload, find-ports, export, catalog/names update. |
+| `pages/ImportExport.tsx` | Replay/migrate upload, export, catalog/names update. |
 | `components/` | `DataTable`, `StatusBadge`, `FormField`, `FilePicker`, `RegionPicker`, `ConfirmDialog`, `Page`, `LootEvidence`. |
 
 The Vite build outputs to `src/gorgon_tracker/static/` (shipped in the pip package). Dev uses a Vite proxy to `http://127.0.0.1:8000` (or `BACKEND=`).

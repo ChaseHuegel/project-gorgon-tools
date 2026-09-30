@@ -11,7 +11,6 @@ def test_defaults(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = load_config()
     assert isinstance(cfg, TrackerConfig)
     assert cfg.db.path == str((tmp_path / "data/gorgon.db").resolve())
-    assert cfg.capture.interface == "auto"
     assert cfg.ocr.zones.region == [1680, 0, 180, 50]
     assert cfg.ocr.targets.interval_s == 0.5
     assert cfg.correlate.buffer_seconds == 10.0

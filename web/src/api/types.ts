@@ -24,13 +24,6 @@ export interface OcrRegion {
 
 export interface Config {
   db: { path: string };
-  capture: {
-    enabled: boolean;
-    tshark_path: string;
-    interface: string;
-    ports: number[];
-    bpf: string;
-  };
   chat: {
     log_dir: string;
     tail: boolean;
@@ -46,8 +39,6 @@ export interface Config {
   };
   correlate: {
     buffer_seconds: number;
-    session_timeout: number;
-    retroactive_threshold: number;
     target_fallback_seconds: number;
     search_corroboration_seconds: number;
   };
@@ -228,21 +219,12 @@ export interface StatusStreamPayload {
   open_session_counts: Record<string, number> | null;
 }
 
-export interface PortsDiscover {
-  tcp: number[];
-  udp: number[];
-  bpf: string;
-  persisted: boolean;
-  found: boolean;
-}
-
 export interface ReplayResult {
   inputs: string[];
   drops: number;
   session_id: number;
   parsed_files: number;
   loot_kept: number;
-  loot_filtered: number;
   encounters?: number;
   encounter_activities?: number;
 }

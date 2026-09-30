@@ -81,20 +81,3 @@ def test_migrate_parsed_chat_json(tmp_path: Path) -> None:
     assert conn.execute("SELECT COUNT(*) c FROM loot").fetchone()["c"] == 1
     assert conn.execute("SELECT COUNT(*) c FROM burials").fetchone()["c"] == 1
     conn.close()
-
-
-def test_migrate_parsed_packets_json(tmp_path: Path) -> None:
-    packets_json = tmp_path / "parsed-packets.txt"
-    payload = [
-        {"Time": "/Date(1768161600000)/", "Monster": "Rat", "CanSkin": True, "CanButcher": False, "CanExtract": False}
-    ]
-    packets_json.write_text(json.dumps(payload))
-
-    conn = _connect(tmp_path)
-    stats = import_bundle(conn, TrackerConfig(), packets_json)
-    assert stats["kind"] == "packets-json"
-    assert stats["imported"] == 1
-    row = conn.execute("SELECT monster, can_skin FROM sources").fetchone()
-    assert row["monster"] == "Rat"
-    assert row["can_skin"] == 1
-    conn.close()

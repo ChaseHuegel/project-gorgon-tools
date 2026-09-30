@@ -21,7 +21,7 @@ def _config_file(tmp_path: Path) -> Path:
     return path
 
 
-# --- ports -------------------------------------------------------------------
+# --- status / backfill --------------------------------------------------------
 
 
 def test_status_warns_about_missing_ledger(tmp_path: Path, monkeypatch) -> None:
@@ -31,7 +31,7 @@ def test_status_warns_about_missing_ledger(tmp_path: Path, monkeypatch) -> None:
     files = scenario.build(tmp_path)
     conn = db.connect(str(tmp_path / "data/gorgon.db"))
     db.migrate(conn)
-    run_replay(conn, TrackerConfig(), expand_inputs([files.capture_json, files.chat_log]))
+    run_replay(conn, TrackerConfig(), expand_inputs([files.player_log, files.chat_log]))
     conn.close()
 
     client = _client(tmp_path)
@@ -56,7 +56,7 @@ def test_backfill_endpoint_rebuilds_ledger(tmp_path: Path, monkeypatch) -> None:
     files = scenario.build(tmp_path)
     conn = db.connect(str(tmp_path / "data/gorgon.db"))
     db.migrate(conn)
-    run_replay(conn, TrackerConfig(), expand_inputs([files.capture_json, files.chat_log]))
+    run_replay(conn, TrackerConfig(), expand_inputs([files.player_log, files.chat_log]))
     conn.execute("DELETE FROM encounter_activities")
     conn.commit()
     conn.close()
@@ -70,32 +70,10 @@ def test_backfill_endpoint_rebuilds_ledger(tmp_path: Path, monkeypatch) -> None:
     assert len(body["sessions"]) == 1
     session = body["sessions"][0]
     assert session["session_id"] == 1
-    assert session["activities"] >= 15
+    assert session["activities"] == 11
 
     warnings = client.get("/api/status").json()["warnings"]
     assert not any("activity ledger" in w for w in warnings)
-
-
-def test_ports_discover_reports_not_found(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr("gorgon_tracker.ports.discover_ports", lambda: (set(), set()))
-    resp = _client(tmp_path).post("/api/ports/discover")
-    assert resp.status_code == 200
-    assert resp.json() == {"tcp": [], "udp": [], "bpf": "", "persisted": False, "found": False}
-
-
-def test_ports_discover_and_persist(tmp_path: Path, monkeypatch) -> None:
-    config_file = _config_file(tmp_path)
-    monkeypatch.setattr("gorgon_tracker.ports.discover_ports", lambda: ({45000, 45002}, {54000}))
-    client = _client(tmp_path, config_file)
-
-    reported = client.post("/api/ports/discover").json()
-    assert reported["found"] is True
-    assert "tcp.port == 45000" in reported["bpf"]
-
-    persisted = client.post("/api/ports/discover", json={"write_config": True}).json()
-    assert persisted["persisted"] is True
-    text = config_file.read_text()
-    assert "45000" in text and "tcp.port" in text
 
 
 # --- replay / migrate via upload --------------------------------------------
@@ -105,7 +83,7 @@ def test_replay_upload(tmp_path: Path) -> None:
     files = scenario.build(tmp_path)
     client = _client(tmp_path)
     uploads = [
-        ("files", (files.capture_json.name, files.capture_json.open("rb"), "application/json")),
+        ("files", (files.player_log.name, files.player_log.open("rb"), "text/plain")),
         ("files", (files.chat_log.name, files.chat_log.open("rb"), "text/plain")),
         ("files", (files.zones_csv.name, files.zones_csv.open("rb"), "text/csv")),
         ("files", (files.targets_csv.name, files.targets_csv.open("rb"), "text/csv")),
@@ -113,12 +91,12 @@ def test_replay_upload(tmp_path: Path) -> None:
     resp = client.post("/api/replay", files=uploads)
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["drops"] == 5
+    assert body["drops"] == 6
     assert len(body["inputs"]) == 4
 
     conn = db.connect(str(tmp_path / "data/gorgon.db"))
     db.migrate(conn)
-    assert conn.execute("SELECT COUNT(*) c FROM loot_drops").fetchone()["c"] == 5
+    assert conn.execute("SELECT COUNT(*) c FROM loot_drops").fetchone()["c"] == 6
     conn.close()
 
 
@@ -129,7 +107,7 @@ def test_replay_server_paths_only(tmp_path: Path, monkeypatch) -> None:
         "/api/replay",
         data={
             "paths": [
-                str(files.capture_json),
+                str(files.player_log),
                 str(files.chat_log),
                 str(files.zones_csv),
                 str(files.targets_csv),
@@ -137,7 +115,7 @@ def test_replay_server_paths_only(tmp_path: Path, monkeypatch) -> None:
         },
     )
     assert resp.status_code == 200, resp.text
-    assert resp.json()["drops"] == 5
+    assert resp.json()["drops"] == 6
 
 
 def test_migrate_upload(tmp_path: Path) -> None:
@@ -166,7 +144,7 @@ def test_migrate_upload(tmp_path: Path) -> None:
 def test_export_csv(tmp_path: Path) -> None:
     files = scenario.build(tmp_path)
     client = _client(tmp_path)
-    client.post("/api/replay", data={"paths": [str(files.capture_json), str(files.chat_log)]})
+    client.post("/api/replay", data={"paths": [str(files.player_log), str(files.chat_log)]})
 
     resp = client.get("/api/export")
     assert resp.status_code == 200
@@ -184,7 +162,7 @@ def _replay_and_drops(tmp_path: Path) -> tuple[TestClient, list[dict]]:
         "/api/replay",
         data={
             "paths": [
-                str(files.capture_json),
+                str(files.player_log),
                 str(files.chat_log),
                 str(files.zones_csv),
                 str(files.targets_csv),

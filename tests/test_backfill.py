@@ -17,7 +17,7 @@ def _populated(tmp_path: Path) -> sqlite3.Connection:
     run_replay(
         conn,
         TrackerConfig(),
-        expand_inputs([files.capture_json, files.chat_log, files.zones_csv, files.targets_csv]),
+        expand_inputs([files.player_log, files.chat_log, files.zones_csv, files.targets_csv]),
     )
     return conn
 
@@ -59,7 +59,7 @@ def test_backfill_restores_fresh_state(tmp_path: Path) -> None:
         assert len(results) == 1
         result = results[0]
         assert result["encounters_created"] == 2  # the two zero-drop corpses
-        assert result["encounters_matched"] == 4
+        assert result["encounters_matched"] == 3
 
         assert conn.execute("SELECT COUNT(*) c FROM encounters").fetchone()["c"] == fresh_encounters
         assert _activity_map(conn) == fresh_activities
@@ -70,13 +70,13 @@ def test_backfill_restores_fresh_state(tmp_path: Path) -> None:
             "SELECT started_at, ended_at, zone FROM encounters"
             " WHERE monster = 'Giant Bat' AND zone = 'Old Graveyard'"
         ).fetchone()
-        assert bat is not None and bat["ended_at"] == bat["started_at"] + 4000  # skin at +4, bury at +6? ended at bury
+        assert bat is not None and bat["ended_at"] == bat["started_at"] + 4000  # ended at bury +6
         deer = conn.execute(
             "SELECT started_at, ended_at FROM encounters WHERE monster = 'Deer' ORDER BY started_at"
         ).fetchall()
         assert [(int(r["started_at"]) % 1_000_000, int(r["ended_at"]) % 1_000_000) for r in deer] == [
-            (630000, 634000),
-            (640000, 643000),
+            (631000, 634000),
+            (641000, 643000),
         ]
     finally:
         conn.close()
@@ -89,8 +89,8 @@ def test_backfill_single_session(tmp_path: Path) -> None:
         results = backfill.backfill_all(conn, session_id=1)
         assert len(results) == 1
         assert results[0]["session_id"] == 1
-        assert results[0]["activities"] >= 15
-        assert _activity_map(conn) == {"Looting": 6, "Skinning": 4, "Butchering": 1, "Buried": 4}
+        assert results[0]["activities"] == 11
+        assert _activity_map(conn) == {"Looting": 5, "Skinning": 2, "Buried": 4}
     finally:
         conn.close()
 
@@ -124,7 +124,7 @@ def test_backfill_cli_command(tmp_path: Path, monkeypatch) -> None:
     run_replay(
         conn,
         TrackerConfig(),
-        expand_inputs([files.capture_json, files.chat_log, files.zones_csv, files.targets_csv]),
+        expand_inputs([files.player_log, files.chat_log, files.zones_csv, files.targets_csv]),
     )
     _downgrade_to_old_style(conn)
     conn.close()
@@ -136,7 +136,7 @@ def test_backfill_cli_command(tmp_path: Path, monkeypatch) -> None:
 
     conn = db.connect(db_path)
     try:
-        assert _activity_map(conn) == {"Looting": 6, "Skinning": 4, "Butchering": 1, "Buried": 4}
+        assert _activity_map(conn) == {"Looting": 5, "Skinning": 2, "Buried": 4}
     finally:
         conn.close()
 
@@ -150,7 +150,7 @@ def test_backfill_is_idempotent(tmp_path: Path) -> None:
         # Re-running matches every existing encounter and inserts nothing new.
         assert second[0]["encounters_created"] == 0
         assert second[0]["encounters_matched"] == first[0]["encounters_created"] + first[0]["encounters_matched"]
-        assert _activity_map(conn) == {"Looting": 6, "Skinning": 4, "Butchering": 1, "Buried": 4}
+        assert _activity_map(conn) == {"Looting": 5, "Skinning": 2, "Buried": 4}
     finally:
         conn.close()
 
@@ -236,14 +236,14 @@ def test_backfill_mixed_sessions(tmp_path: Path) -> None:
         replay_result = backfill.backfill_all(conn)[0]
         assert replay_result["derived"] == 0
         assert replay_result["encounters_created"] == 0  # fresh ledger already complete
-        assert replay_result["encounters_matched"] == 6
+        assert replay_result["encounters_matched"] == 5
 
         sid = _legacy_style_session(conn)
         results = backfill.backfill_all(conn)
         assert len(results) == 2
         by_id = {r["session_id"]: r for r in results}
         assert by_id[sid]["derived"] == 6
-        assert by_id[replay_result["session_id"]]["encounters_matched"] == 6
-        assert _activity_map(conn)["Looting"] == 6 + 3  # golden 6 + legacy 3
+        assert by_id[replay_result["session_id"]]["encounters_matched"] == 5
+        assert _activity_map(conn)["Looting"] == 5 + 3  # golden 5 + legacy 3
     finally:
         conn.close()

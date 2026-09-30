@@ -17,7 +17,7 @@ def _populated(tmp_path: Path) -> Path:
     run_replay(
         conn,
         TrackerConfig(),
-        expand_inputs([files.capture_json, files.chat_log, files.zones_csv, files.targets_csv]),
+        expand_inputs([files.player_log, files.chat_log, files.zones_csv, files.targets_csv]),
     )
     conn.close()
     return tmp_path / "local.db"
@@ -33,13 +33,17 @@ def test_plan_payload_carries_effective_override(tmp_path: Path) -> None:
     conn = db.connect(db_path)
     try:
         ids = _ids(conn)
-        db.upsert_loot_override(conn, ids[0], status="Orphaned", activity="Harvesting")
+        # The deer-skin row shares its encounter with the Skinning activity.
+        skin_id = conn.execute(
+            "SELECT id FROM loot_drops WHERE item = 'Crude Animal Skin'"
+        ).fetchone()["id"]
+        db.upsert_loot_override(conn, skin_id, status="Orphaned", activity="Harvesting")
 
         planned = publish.plan_payload(conn, ids)
         assert len(planned) == len(ids)
         assert all("payload" in item and "loot_drop_id" in item for item in planned)
 
-        first = planned[0]
+        first = next(p for p in planned if p["loot_drop_id"] == skin_id)
         assert first["payload"]["status"] == "Orphaned"
         assert first["payload"]["activity"] == "Harvesting"
         assert first["payload"]["captured_at"] > 0

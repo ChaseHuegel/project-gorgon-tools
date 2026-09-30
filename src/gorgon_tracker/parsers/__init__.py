@@ -1,2 +1,2 @@
-"""Parsers for chat, packets, and OCR text.
+"""Parsers for chat logs, the Unity Player.log, and OCR text.
 """

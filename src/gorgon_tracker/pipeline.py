@@ -23,7 +23,6 @@ from .correlator import (
     InteractionStart,
     ItemCode,
     LootEvent,
-    SourceEvent,
     TargetSighting,
     ZoneChange,
 )
@@ -31,7 +30,6 @@ from .ingest import DbWriter
 from .sources import chat_tail as chat_source
 from .sources import ocr as ocr_source
 from .sources import player_log as playerlog_source
-from .sources import tshark_live as packet_source
 from .timeutil import utc_now_ms
 
 logger = logging.getLogger("gorgon_tracker.pipeline")
@@ -68,10 +66,6 @@ def _dispatch(event: object, writer: DbWriter, correlator: Correlator) -> str:
         writer.loot(event)
         correlator.ingest_loot(event)
         return "loot"
-    if isinstance(event, SourceEvent):
-        writer.source(event)
-        correlator.ingest_source(event)
-        return "source"
     if isinstance(event, InteractionStart):
         writer.interaction(event)
         correlator.ingest_interaction(event)
@@ -101,20 +95,8 @@ def _write_encounter_event(event: object, writer: DbWriter, counters: Counter[st
         raise TypeError(f"unhandled encounter event: {type(event).__name__}")
 
 
-def has_capture_ok(cfg: TrackerConfig) -> bool:
-    """Whether the packet source can be started (tshark present, filter resolvable)."""
-    try:
-        packet_source.build_bpf_filter(cfg)
-        return True
-    except RuntimeError:
-        return False
-
-
 def build_producers(cfg: TrackerConfig, emit: Callable[[object], None]) -> list[tuple[str, Producer]]:
     producers: list[tuple[str, Producer]] = []
-
-    if cfg.capture.enabled:
-        producers.append(("packet", lambda stop: packet_source.produce(cfg, emit, stop)))
 
     if cfg.chat.tail:
         chat_dir = cfg.chat.log_dir
@@ -188,8 +170,6 @@ def _run_pipeline_inner(
     writer = DbWriter(conn, session_id)
     correlator = Correlator(
         buffer_seconds=cfg.correlate.buffer_seconds,
-        session_timeout=cfg.correlate.session_timeout,
-        retroactive_threshold=cfg.correlate.retroactive_threshold,
         target_fallback_seconds=cfg.correlate.target_fallback_seconds,
         search_corroboration_seconds=cfg.correlate.search_corroboration_seconds,
         activity_window_seconds=cfg.correlate.activity_window_seconds,

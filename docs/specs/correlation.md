@@ -4,24 +4,21 @@ This spec describes how the tracker links loot pickups to monster sources and ac
 
 ## Tuning constants
 
-All constants are config-backed (`[correlate]`). Defaults at `src/gorgon_tracker/config.py:68-84`, consumed at `correlator.py:239-254`.
+All constants are config-backed (`[correlate]`). Defaults at `src/gorgon_tracker/config.py:64-74`, consumed at `correlator.py:223-231`.
 
 | Key | Default | Meaning |
 |---|---|---|
 | `buffer_seconds` | `10.0` | Max age of a monster source (or target sighting) that can explain a loot drop. |
-| `session_timeout` | `3.0` | Max seconds between body-state packets that still count as the same encounter. |
-| `retroactive_threshold` | `0.9` | Max seconds a drop may precede a packet `can_*` transition to inherit Skinning/Butchering/Extracting. |
-| `activity_window_seconds` | `2.0` | Max distance from a corpse-description transition or chat activity marker a drop inherits its activity. Wider than `retroactive_threshold` because the Unity log stamps whole seconds. |
+| `activity_window_seconds` | `2.0` | Max distance from a corpse-description transition or chat activity marker a drop inherits its activity. The Unity log stamps whole seconds, so a pickup and the description update can be ~1s apart. |
 | `target_fallback_seconds` | `3.0` | Max age of a target sighting that may attribute loot. |
 | `search_corroboration_seconds` | `2.0` | A target-linked drop within this many seconds of a same-name corpse search is corpse loot, not a harvestable. |
 
 ## Event DTOs
 
-Defined at `src/gorgon_tracker/correlator.py:20-135`:
+Defined at `src/gorgon_tracker/correlator.py:20-129`:
 
 | DTO | Producer | Purpose |
 |---|---|---|
-| `SourceEvent` | packets | A corpse-search frame: monster + `can_skin/can_butcher/can_extract`. |
 | `LootEvent` | chat, Player.log | A pickup. `instance_id`/`entity_id` come from the Unity log. `source_class` is `chat` or `unity`. `missed=True` means inventory was full. |
 | `BuryEvent` | chat, Player.log | Corpse buried. It ends the encounter. |
 | `ActivityEvent` | chat | A `You skin/butcher/extract ...` status marker. |
@@ -39,7 +36,7 @@ Defined at `src/gorgon_tracker/correlator.py:20-135`:
 
 ## Ingestion rules
 
-All rules implemented in `src/gorgon_tracker/correlator.py:276-437`.
+All rules implemented in `src/gorgon_tracker/correlator.py:264-425`.
 
 ### Loot
 
@@ -48,10 +45,6 @@ All rules implemented in `src/gorgon_tracker/correlator.py:276-437`.
 ### Bury
 
 `ingest_bury` flushes pending drops against the current monster, records a `Buried` activity and an `EncounterEnd` on the current encounter, then starts a new encounter and clears monster, flags, activity hint, and corpse state.
-
-### Source (packet frame)
-
-`ingest_source` decides whether the frame is the same encounter: same monster and within `session_timeout` seconds. A state transition (`just_skinned` = same encounter, previous `can_skin` true, now false) relabels the flush if drops fall within the threshold and records a `Skinning`/`Butchering`/`Extracting` activity. Otherwise a monster change rolls a new `encounter_uuid`, emits `EncounterBegin` for the old one's end, and starts the new encounter.
 
 ### Interaction and corpse search
 
@@ -74,7 +67,7 @@ The pipeline drains these through the writer (`pipeline.py:216-217`). Replay doe
 `_flush` (`correlator.py:791-`) runs on a source/bury/activity/corpse-search event. For each pending drop, after chat/unity reconciliation:
 
 1. Monster-linked branch: `monster_lag <= buffer_seconds`, `monster_lag < orphan_lag`, and `_plausibly_from_corpse` accepts the drop (`correlator.py:595-614`). A Unity pickup passes when its entity id maps to the current monster. A chat-only pickup passes when the open window is a corpse of the current monster and the pickup is within `search_corroboration_seconds`. Without any Unity corpse knowledge, every pickup passes (legacy proximity). Activity is `Looting`, upgraded to `Skinning`/`Butchering`/`Extracting` on a `just_*` transition within the window, or to the chat activity hint. Status `Linked`.
-2. Orphan branch: best target sighting within `target_fallback_seconds` (smallest lag wins). A same-name corpse search within `search_corroboration_seconds` makes it `Looting`. Otherwise it is `Harvesting` (flowers/logs/apples have no corpse-search packet). No target → `Ground/Unknown` with status `Orphaned`.
+2. Orphan branch: best target sighting within `target_fallback_seconds` (smallest lag wins). A same-name corpse search within `search_corroboration_seconds` makes it `Looting`. Otherwise it is `Harvesting` (flowers/logs/apples have no corpse search). No target → `Ground/Unknown` with status `Orphaned`.
 
 `flush_expired` (`correlator.py:455-473`) emits orphaned drops for pending loot older than `buffer_seconds` so live streams do not hold them forever. `finalize` (`correlator.py:476-516`) flushes the remainder at end of stream with `lag_ms=0`, by the same branch rules.
 
@@ -97,14 +90,14 @@ Every `LootDrop` carries attribution evidence (`correlator.py:120-144`):
 | `linked_via` | `monster`, `target`, or `orphan`. |
 | `monster_name`, `monster_lag_ms` | The monster source that claimed the drop. |
 | `target_name`, `target_lag_ms` | The target sighting that claimed the drop. |
-| `corroborated_by_search` | A same-name corpse-search packet corroborated a target link. |
+| `corroborated_by_search` | A same-name corpse search corroborated a target link. |
 | `instance_id`, `entity_id`, `item_code_id`, `item_display` | Unity provenance. |
 | `missed` | Inventory full. Not collected. |
 | `killer_json` | Killer + participant damage table for the corpse's encounter. |
 
 ## Rates semantics (per activity)
 
-Drop rates divide by the activity ledger, not by encounters that produced drops. The ledger table `encounter_activities` has one row per `(encounter_id, activity)`. The unique key dedupes the same action reported by a packet transition, a chat marker, and a corpse description.
+Drop rates divide by the activity ledger, not by encounters that produced drops. The ledger table `encounter_activities` has one row per `(encounter_id, activity)`. The unique key dedupes the same action reported by a chat marker and a corpse description.
 
 The `v_drop_rates` view (migration v7, `db.py:117-152`) and the shared inline SQL (`serve.py:76-112`) group by `(monster, activity, item)`. The denominator is the count of distinct encounters where that activity happened, joined from `encounter_activities`:
 
@@ -124,11 +117,11 @@ Encounters are written eagerly at first sighting (`ingest.py:223-236`), so a cor
 |---|---|
 | 0 | `ZoneChange`, `TargetSighting` (state) |
 | 1 | `LootEvent` (loot before state changes at equal time) |
-| 2 | `SourceEvent`, `BuryEvent`, `ActivityEvent`, `InteractionStart`, `CorpseSearch`, `ItemCode` |
+| 2 | `BuryEvent`, `ActivityEvent`, `InteractionStart`, `CorpseSearch`, `ItemCode` |
 
 ## Backfill of historical sessions
 
-Sessions captured before activity tracking only have drop-derived encounters. `gorgon-tracker backfill-encounters` replays each session's own `raw_events` through the correlator and writes the missing ledger (`src/gorgon_tracker/backfill.py`). Rebuilt encounters match existing rows by (monster, drop times). Zero-drop corpses match by (monster, zone, start time). Loot rows are never rewritten.
+Sessions captured before activity tracking only have drop-derived encounters. `gorgon-tracker backfill-encounters` replays each session's own `raw_events` through the correlator and writes the missing ledger (`src/gorgon_tracker/backfill.py`). Rebuilt encounters match existing rows by (monster, drop times). Zero-drop corpses match by (monster, zone, start time). Loot rows are never rewritten. Legacy `packet` raw events are skipped: the packet format is no longer decoded, so packet-era sessions rebuild their ledger from their Unity/chat/OCR events only.
 
 Sessions whose `raw_events` contain no corpse events cannot be replayed. This covers legacy CSV imports, where the loot rows already carry monster, activity, and encounter identity. For those sessions the drops are the only evidence, so the backfill derives the ledger from them: each distinct drop activity on an encounter becomes one row at the earliest drop time (`_derive_legacy_ledger`). The backfill also stamps the encounter's zone and end time from the drops. Skinned corpses that yielded no loot are unknowable in legacy data, so the derived ledger records only observed activities. The CLI table and the API result show the derived count.
 

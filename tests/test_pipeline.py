@@ -4,7 +4,6 @@ from pathlib import Path
 
 from gorgon_tracker import db, pipeline
 from gorgon_tracker.config import TrackerConfig
-from gorgon_tracker.sources import tshark_live
 
 from . import scenario
 
@@ -12,7 +11,6 @@ from . import scenario
 def _live_cfg(tmp_path: Path) -> TrackerConfig:
     cfg = TrackerConfig()
     cfg.db.path = str(tmp_path / "live.db")
-    cfg.capture.enabled = False
     cfg.ocr.enabled = False
     cfg.chat.tail = True
     cfg.chat.log_dir = str(tmp_path / "chats")
@@ -118,13 +116,11 @@ def test_pipeline_reports_no_empty_producers(tmp_path: Path, monkeypatch) -> Non
     producers = pipeline.build_producers(cfg, fake_emit)
     names = [name for name, _ in producers]
     assert "chat" in names
-    assert "packet" not in names  # capture disabled
     assert "zone" not in names and "target" not in names  # ocr disabled
 
 
 def test_pipeline_registers_playerlog_when_path_set(tmp_path: Path) -> None:
     cfg = TrackerConfig()
-    cfg.capture.enabled = False
     cfg.ocr.enabled = False
     cfg.chat.tail = False
     cfg.playerlog.path = str(tmp_path / "Player.log")
@@ -134,21 +130,3 @@ def test_pipeline_registers_playerlog_when_path_set(tmp_path: Path) -> None:
     names = [name for name, _ in pipeline.build_producers(cfg, emitted.append)]
     assert "playerlog" in names
     assert "chat" not in names
-    assert "packet" not in names
-
-
-def test_pipeline_registers_packet_when_filter_not_yet_resolvable(monkeypatch) -> None:
-    cfg = TrackerConfig()
-    cfg.capture.enabled = True
-    cfg.chat.tail = False
-    cfg.ocr.enabled = False
-
-    def no_filter(_cfg: TrackerConfig) -> str:
-        raise RuntimeError("no filter")
-
-    monkeypatch.setattr(tshark_live, "build_bpf_filter", no_filter)
-
-    emitted: list = []
-    names = [name for name, _ in pipeline.build_producers(cfg, emitted.append)]
-    # Packet capture must still be registered so discovery can retry at produce time.
-    assert "packet" in names

@@ -1,6 +1,7 @@
 rel_ms,source,encounter,activity,item,amount,status,lag_ms,zone
-3.0,Giant Bat,1,Looting,Bat Guano,1,Linked,1000,Old Graveyard
+3.0,Giant Bat,1,Looting,Bat Guano,1,Linked,2000,Old Graveyard
 9.0,Dire Wolf,2,Looting,Wolf Pelt,2,Linked,1000,Fairy Glen
 12.0,Dire Wolf,3,Looting,Ground Twig,1,Linked,0,Fairy Glen
 20.0,Giant Bat,4,Looting,Bat Wing,1,Linked,0,Fairy Glen
 33.0,Deer,5,Skinning,Crude Animal Skin,1,Linked,1000,Fairy Glen
+60.0,Ground/Unknown,6,Harvesting,PostWindow Item,1,Orphaned,0,Fairy Glen

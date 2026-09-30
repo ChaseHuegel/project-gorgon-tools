@@ -15,19 +15,18 @@ The package installs via the Typer entry point `gorgon-tracker` (`pyproject.toml
 
 ## Required external binaries
 
-The executable does not bundle tshark or tesseract. These two binaries must be installed on the target machine. Without them, the capture, replay, and OCR commands do not work.
+The executable does not bundle tesseract. This binary must be installed on the target machine. Without it, the OCR commands do not work.
 
 The tool looks up a configured path on PATH when the value is a bare command name, and uses an explicit path directly. The lookup lives in `src/gorgon_tracker/binpath.py`. A missing binary produces a warning with an install hint. The web UI shows the warning at `web.py:80` through `control.setup_warnings`.
 
 | Binary | Config key | Purpose |
 |---|---|---|
-| tshark | `capture.tshark_path` | Packet capture, offline pcap replay, sniff-inspect |
 | tesseract | `ocr.tesseract_path` | Screen OCR for zones and targets |
 
-To install the binaries:
+To install the binary:
 
-- Linux (APT): install `tesseract-ocr` and `tshark`.
-- Windows: install the Tesseract installer and Wireshark. Set `[ocr] tesseract_path` when the installer does not add tesseract.exe to PATH.
+- Linux (APT): install `tesseract-ocr`.
+- Windows: install the Tesseract installer. Set `[ocr] tesseract_path` when the installer does not add tesseract.exe to PATH.
 
 ## Build a single executable
 
@@ -47,11 +46,10 @@ The wrapper writes the executable to `dist/bundle/`. It adds a `.exe` suffix on 
 
 The wrapper follows the server imports that are loaded lazily inside functions. These are `fastapi`, `uvicorn`, `starlette`, `pydantic`, `httpx`, and `multipart`. It passes them as `--include-module` entries. The list lives in `tools/build_exe.py:22-28`.
 
-After the build, test the executable against the fixture database:
+After the build, test the executable:
 
 ```sh
 dist/bundle/gorgon-tracker version
-dist/bundle/gorgon-tracker replay tests/fixtures/phase1/expected_loot.csv
 dist/bundle/gorgon-tracker export --out /tmp/out.csv
 ```
 
@@ -64,4 +62,3 @@ The one-file form unpacks to a temporary directory at startup. The schema load a
 ## Notes
 
 - The daemon command forks a process (`daemon.py:39`). It works on Linux. On Windows, the `web` UI starts capture itself (`control.py:32`).
-- The `find-ports` command runs the `ss` utility that ships with the operating system.

@@ -4,13 +4,6 @@
 # [db]
 # path = "data/gorgon.db"
 
-# [capture]
-# enabled = true              # packet capture via tshark
-# interface = "auto"          # tshark interface id/name, or "auto"
-# tshark_path = "tshark"
-# ports = []                  # set via `gorgon-tracker find-ports`
-# bpf = ""                    # explicit BPF filter (wins over ports if set)
-
 # [chat]
 # log_dir = ""                # auto-detected ChatLog dir when empty (Windows native / Proton library folders)
 # tail = true
@@ -40,8 +33,6 @@
 
 # [correlate]
 # buffer_seconds = 10.0
-# session_timeout = 3.0
-# retroactive_threshold = 0.9
 # activity_window_seconds = 2.0   # loot-window for corpse-description/chat activity markers (whole-second log grains)
 # target_fallback_seconds = 3.0   # max age of a target sighting that may attribute loot
 # search_corroboration_seconds = 2.0  # same-name corpse search window marking target loot as corpse loot
@@ -59,4 +50,7 @@
 # ingest_token = ""           # token required by the ingest endpoint (required when enabled)
 
 [ocr.zones]
-region = [1680, 31, 180, 20]
+region = [3660, 34, 125, 14]
+
+[ocr.targets]
+region = [2737, 64, 170, 20]

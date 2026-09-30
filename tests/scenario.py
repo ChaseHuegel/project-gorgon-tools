@@ -1,18 +1,17 @@
 """Builds the deterministic Phase-1 golden scenario (timezone-independent).
 
 All absolute times are defined relative to a fixed UTC base ``B``. Wall-clock
-strings are rendered in a way the legacy formats expect:
+strings are rendered in a way the supported formats expect:
 
 * chat log lines use local two-digit-year wall time (`yy-MM-dd HH:mm:ss`);
 * OCR zone/target CSVs use UTC wall time with milliseconds (`yyyy-MM-dd HH:mm:ss.fff`);
-* packet JSON frames carry an absolute ``frame.time_epoch``.
+* the Unity ``Player.log`` fixture stamps `[HH:MM:SS]` UTC with a login anchor.
 
 This keeps the golden output identical on any host timezone.
 """
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -38,39 +37,51 @@ def utc_wall(seconds: float, with_ms: bool = True) -> str:
     return dt.strftime("%Y-%m-%d %H:%M:%S")
 
 
-def hexify(text: str) -> str:
-    return ":".join(f"{ord(ch):02x}" for ch in text)
+def pl(seconds: float, body: str) -> str:
+    """Render one ``Player.log`` line with a ``[HH:MM:SS]`` UTC stamp."""
+    return f"[{utc_wall(seconds, with_ms=False).split()[1]}] {body}"
 
 
-def frame_json(seconds: float, payload: str) -> dict:
-    epoch = at(seconds) / 1000
-    display = datetime.fromtimestamp(epoch).strftime("%b %d, %Y %H:%M:%S.%f")
-    return {
-        "_source": {
-            "layers": {
-                "frame": {
-                    "frame.time": display,
-                    "frame.time_epoch": f"{epoch:.9f}",
-                },
-                "tcp": {"tcp.payload": hexify(payload)},
-            }
-        }
-    }
+def interaction(seconds: float, entity_id: int) -> str:
+    return pl(seconds, f'LocalPlayer: ProcessStartInteraction({entity_id}, 13.5, 0, False, "")')
 
 
-# Timeline: (seconds, kind, detail)
-CAPTURE_FRAMES = [
-    frame_json(2.0, "Search Corpse of Giant Bat\nSkin Corpse\n"),
-    frame_json(4.0, "Search Corpse of Giant Bat\n"),
-    frame_json(8.0, "Search Corpse of Dire Wolf\nButcher Corpse\n"),
-    frame_json(10.0, "Search Corpse of Dire Wolf\n"),
-    frame_json(16.0, "Search Corpse of Giant Bat\nSkin Corpse\n"),
-    frame_json(20.0, "Search Corpse of Giant Bat\nSkin Corpse\n"),
-    frame_json(21.0, "Search Corpse of Giant Bat\n"),
-    frame_json(30.0, "Search Corpse of Deer\nSkin Corpse\n"),
-    frame_json(31.0, "Search Corpse of Deer\n"),
-    frame_json(40.0, "Search Corpse of Deer\nSkin Corpse\n"),
-    frame_json(41.0, "Search Corpse of Deer\n"),
+def corpse_search(seconds: float, entity_id: int, monster: str) -> str:
+    return pl(
+        seconds,
+        f'LocalPlayer: ProcessTalkScreen({entity_id}, "Search Corpse of {monster}", '
+        '"", "", [], System.String[], 1, Corpse)',
+    )
+
+
+def bury(seconds: float) -> str:
+    return pl(seconds, 'LocalPlayer: ProcessScreenText(GeneralInfo, "You bury the corpse.")')
+
+
+LOGIN = (
+    "Logged in as character Tester. Time UTC=01/11/2026 20:00:00. Timezone Offset +00:00:00."
+)
+
+# Timeline: corpse windows open with an interaction, name the monster on a
+# corpse-search screen, and close with a bury.
+PLAYER_LOG_LINES = [
+    pl(0.0, LOGIN),
+    interaction(1.0, 501),
+    corpse_search(2.0, 501, "Giant Bat"),
+    bury(6.0),
+    interaction(7.0, 502),
+    corpse_search(8.0, 502, "Dire Wolf"),
+    corpse_search(10.0, 502, "Dire Wolf"),
+    bury(13.0),
+    interaction(16.0, 503),
+    corpse_search(20.0, 503, "Giant Bat"),
+    corpse_search(21.0, 503, "Giant Bat"),
+    interaction(30.0, 504),
+    corpse_search(31.0, 504, "Deer"),
+    bury(34.0),
+    interaction(40.0, 505),
+    corpse_search(41.0, 505, "Deer"),
+    bury(43.0),
 ]
 
 ZONE_ROWS = [
@@ -86,18 +97,13 @@ TARGET_ROWS = [
 # Chat log lines are whole-second resolution (legacy format).
 # (seconds, item, amount, marker) where marker is None, "bury", or a verb.
 CHAT_LINES = [
-    (1.0, "PreWindow Item", 1, None),
     (3.0, "Bat Guano", 1, None),
-    (6.0, None, None, "bury"),
     (9.0, "Wolf Pelt", 2, None),
     (12.0, "Ground Twig", 1, None),
-    (13.0, None, None, "bury"),
     (20.0, "Bat Wing", 1, None),
     (32.0, None, None, "skin"),
     (33.0, "Crude Animal Skin", 1, None),
-    (34.0, None, None, "bury"),
     (42.0, None, None, "skin"),
-    (43.0, None, None, "bury"),
     (60.0, "PostWindow Item", 1, None),
 ]
 
@@ -105,7 +111,7 @@ CHAT_LINES = [
 @dataclass
 class ScenarioFiles:
     base_ms: int
-    capture_json: Path
+    player_log: Path
     chat_log: Path
     zones_csv: Path
     targets_csv: Path
@@ -113,8 +119,8 @@ class ScenarioFiles:
 
 def build(tmp_path: Path) -> ScenarioFiles:
     tmp_path.mkdir(parents=True, exist_ok=True)
-    capture = tmp_path / "capture.json"
-    capture.write_text("[\n" + ",\n".join(f"  {json.dumps(frame)}" for frame in CAPTURE_FRAMES) + "\n]\n")
+    player_log = tmp_path / "Player.log"
+    player_log.write_text("\n".join(PLAYER_LOG_LINES) + "\n")
 
     chat = tmp_path / "chatsession.log"
     lines = []
@@ -138,4 +144,4 @@ def build(tmp_path: Path) -> ScenarioFiles:
         "Time,Text\n" + "\n".join(f"{utc_wall(seconds)},{name}" for seconds, name in TARGET_ROWS) + "\n"
     )
 
-    return ScenarioFiles(base_ms=BASE_MS, capture_json=capture, chat_log=chat, zones_csv=zones, targets_csv=targets)
+    return ScenarioFiles(base_ms=BASE_MS, player_log=player_log, chat_log=chat, zones_csv=zones, targets_csv=targets)

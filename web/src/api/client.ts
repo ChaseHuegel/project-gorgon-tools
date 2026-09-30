@@ -15,7 +15,6 @@ import type {
   MigrateResult,
   NamesInfo,
   NamesUpdateResult,
-  PortsDiscover,
   ReplayResult,
   SearchResults,
   Session,
@@ -195,13 +194,6 @@ export const api = {
 
   catalog: () => request<CatalogInfo>("/api/catalog"),
   updateCatalog: () => request<CatalogUpdateResult>("/api/catalog/update", { method: "POST" }),
-
-  discoverPorts: (writeConfig = false) =>
-    request<PortsDiscover>("/api/ports/discover", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ write_config: writeConfig }),
-    }),
 
   replay: (form: FormData) =>
     request<ReplayResult>("/api/replay", { method: "POST", body: form }),

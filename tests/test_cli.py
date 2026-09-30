@@ -66,7 +66,6 @@ def test_all_commands_registered() -> None:
         "run",
         "status",
         "stop",
-        "find-ports",
         "calibrate",
         "replay",
         "migrate",
@@ -103,8 +102,7 @@ def test_calibrate_command_runs(tmp_path: Path, monkeypatch) -> None:
 
 def test_find_ports_reports_when_game_absent() -> None:
     result = runner.invoke(app, ["find-ports"])
-    assert result.exit_code == 1
-    assert "No Project Gorgon process found" in result.output
+    assert result.exit_code != 0
 
 
 def test_replay_cli_end_to_end(tmp_path: Path) -> None:
@@ -118,7 +116,7 @@ def test_replay_cli_end_to_end(tmp_path: Path) -> None:
             "replay",
             "--db",
             db_path,
-            str(files.capture_json),
+            str(files.player_log),
             str(files.chat_log),
             str(files.zones_csv),
             str(files.targets_csv),
@@ -128,10 +126,10 @@ def test_replay_cli_end_to_end(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert "Replay summary" in result.output
     drops_line = [line for line in result.output.splitlines() if "drops" in line]
-    assert drops_line and "5" in drops_line[0]
+    assert drops_line and "6" in drops_line[0]
     conn = db.connect(db_path)
     db.migrate(conn)
-    assert conn.execute("SELECT COUNT(*) c FROM loot_drops").fetchone()["c"] == 5
+    assert conn.execute("SELECT COUNT(*) c FROM loot_drops").fetchone()["c"] == 6
     conn.close()
 
 

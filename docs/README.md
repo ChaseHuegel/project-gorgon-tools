@@ -13,7 +13,6 @@ This index maps subjects to their docs. It is the recommended first read for age
 | Build standalone Linux/Windows executables | [`docs/packaging.md`](packaging.md) |
 | Chat log line format | [`docs/specs/chat-log.md`](specs/chat-log.md) |
 | Unity `Player.log` format | [`docs/specs/player-log.md`](specs/player-log.md) |
-| Packet format (corpse-search frames) | [`docs/specs/packets.md`](specs/packets.md) |
 | Loot correlation logic | [`docs/specs/correlation.md`](specs/correlation.md) |
 | Game CDN + wiki data formats | [`docs/specs/cdn-catalog.md`](specs/cdn-catalog.md) |
 | CSV and import formats | [`docs/specs/csv-formats.md`](specs/csv-formats.md) |
@@ -45,7 +44,7 @@ The "source of truth" is the code; docs record behavior so agents do not re-disc
 
 ### Examples of changes that trigger a docs pass
 
-- A chat, Player.log, packet, CDN, or CSV format changes → update the matching spec.
+- A chat, Player.log, CDN, or CSV format changes → update the matching spec.
 - A correlation constant or transition rule changes → `docs/specs/correlation.md`.
 - A route, query param, or response field changes → `docs/api.md`.
 - A migration or table changes → `docs/architecture.md` (DB section).

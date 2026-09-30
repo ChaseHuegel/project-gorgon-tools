@@ -114,7 +114,6 @@ def test_insert_helpers_roundtrip(tmp_path: Path) -> None:
     raw_id = db.insert_raw_event(conn, session_id, "chat", 1000, {"line": "x"}, "hash-1")
     assert raw_id == 1
 
-    source_id = db.insert_source(conn, session_id, raw_id, 1000, "Rat", True, False, True)
     loot_id = db.insert_loot(conn, session_id, raw_id, 1000, "Rat Jaw", 2)
     bury_id = db.insert_burial(conn, session_id, raw_id, 1000)
     sight_id = db.insert_target_sighting(conn, session_id, raw_id, 1000, "Rat")
@@ -140,7 +139,7 @@ def test_insert_helpers_roundtrip(tmp_path: Path) -> None:
         corroborated_by_search=True,
     )
 
-    assert source_id == loot_id == bury_id == sight_id == zone_id == drop_id == 1
+    assert loot_id == bury_id == sight_id == zone_id == drop_id == 1
     assert conn.execute("SELECT COUNT(*) AS c FROM loot_drops WHERE encounter_id = ?", (enc_id,)).fetchone()["c"] == 1
     row = conn.execute("SELECT * FROM loot_drops WHERE id = ?", (drop_id,)).fetchone()
     assert row["linked_via"] == "monster"

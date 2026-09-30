@@ -4,7 +4,7 @@ This file tells agents how to navigate and develop in this repository. Start her
 
 ## Project at a glance
 
-gorgon-tracker is a Python + SQLite loot and drop-rate tracker for the game Project Gorgon. It captures game data at runtime (packets, chat logs, the Unity `Player.log`, screen OCR), correlates loot with the monster that dropped it, and serves the result through a read API and a React SPA.
+gorgon-tracker is a Python + SQLite loot and drop-rate tracker for the game Project Gorgon. It captures game data at runtime (chat logs, the Unity `Player.log`, screen OCR), correlates loot with the monster that dropped it, and serves the result through a read API and a React SPA.
 
 Two subsystems:
 
@@ -33,7 +33,7 @@ Bundled reference data (do not confuse with runtime `data/`) ships inside the pa
 | Goal | Go to |
 |---|---|
 | Understand the system | `docs/architecture.md` |
-| Find a reverse-engineered format | `docs/specs/` (chat, player-log, packets, correlation, cdn-catalog, csv-formats, ocr) |
+| Find a reverse-engineered format | `docs/specs/` (chat, player-log, cdn-catalog, csv-formats, ocr) |
 | Add or change an API endpoint | `docs/api.md` |
 | Config keys, tests, code style | `docs/development.md` |
 | User-facing setup/usage | `README.md` |
@@ -85,6 +85,5 @@ Full protocol: `docs/README.md`.
 ## Working notes for fresh prompts
 
 - The capture daemon is the only SQLite writer; read endpoints and SSE open short-lived connections. Never add a second writer during capture.
-- The legacy PowerShell keys on packet plaintext plus chat regexes; the current port adds the Unity `Player.log` as the authoritative loot/corpse source. Reconcile logic: `docs/specs/correlation.md`.
-- The live packet path has a known separator quirk (`FIELD_SEPARATOR = "/t"` vs tab split in `src/gorgon_tracker/sources/tshark_live.py`). See `docs/specs/packets.md`.
+- The Unity `Player.log` is the authoritative loot/corpse source. Chat regexes and OCR supply the rest. Reconcile logic: `docs/specs/correlation.md`.
 - Offline replay/migrate feed the same parsers and correlator as live capture; parity between the two is an invariant (golden test).

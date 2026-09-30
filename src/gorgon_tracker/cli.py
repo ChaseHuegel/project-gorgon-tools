@@ -164,25 +164,6 @@ def stop(
 
 
 @app.command()
-def find_ports() -> None:
-    """Detect the game's network ports and print a capture BPF filter."""
-    from . import ports
-
-    tcp_ports, udp_ports = ports.discover_ports()
-    if not tcp_ports and not udp_ports:
-        console.print("[yellow]No Project Gorgon process found. Start the game and retry.[/yellow]")
-        raise typer.Exit(1)
-    table = Table(title="Project Gorgon ports")
-    table.add_column("protocol")
-    table.add_column("ports")
-    table.add_row("tcp", ", ".join(str(p) for p in sorted(tcp_ports)) or "-")
-    table.add_row("udp", ", ".join(str(p) for p in sorted(udp_ports)) or "-")
-    console.print(table)
-    console.print("[green]" + ports.build_bpf(tcp_ports, udp_ports) + "[/green]")
-    console.print("Copy the filter into [codeml][capture] bpf[/codeml] or use [b]run --auto-ports[/b].")
-
-
-@app.command()
 def calibrate(
     ctx: typer.Context,
     kind: str = typer.Option("zones", help="Region to calibrate: zones or targets."),
@@ -203,72 +184,17 @@ def calibrate(
 
 
 @app.command()
-def sniff_inspect(
-    ctx: typer.Context,
-    outdir: Path = typer.Option(  # noqa: B008 - required by typer
-        Path("sniff-output"), "--outdir", "-o", help="Directory for the raw capture and report artifacts."
-    ),
-    duration: float | None = typer.Option(  # noqa: B008 - required by typer
-        None, help="Capture for N seconds (default: until Enter/Ctrl-C)."
-    ),
-    pcap: Path | None = typer.Option(  # noqa: B008 - required by typer
-        None, help="Analyze an existing capture file instead of capturing live."
-    ),
-    bpf: str | None = typer.Option(None, help="Override the capture/display filter."),
-) -> None:
-    """Capture game traffic and inventory plaintext strings (packet investigation)."""
-    import threading
-
-    from . import ports as ports_mod
-    from . import sniff_inspect as sniff_mod
-
-    stop_event = threading.Event()
-
-    game_tcp_ports: set[int] | None = None
-    if pcap is None:
-        game_tcp_ports, _ = ports_mod.discover_ports()
-
-    if duration is None:
-        console.print("[yellow]Capturing game traffic. Perform the scripted actions (kill, loot-all, skin, ")
-        console.print("butcher, bury, harvest), then press Enter or Ctrl-C to stop.[/yellow]")
-
-        from contextlib import suppress
-
-        def _wait_for_stop() -> None:
-            with suppress(EOFError):
-                input()
-            stop_event.set()
-
-        threading.Thread(target=_wait_for_stop, daemon=True).start()
-
-    if pcap is not None:
-        summary = sniff_mod.analyze_pcap(ctx.obj, pcap.expanduser(), outdir, bpf, game_tcp_ports)
-    else:
-        summary = sniff_mod.capture_live(
-            ctx.obj, outdir, stop_event, bpf, duration_s=duration, game_tcp_ports=game_tcp_ports
-        )
-
-    console.print(f"[green]Captured {summary['frames']} frames, {summary['unique_tokens']} unique strings[/green]")
-    console.print(f"  raw/source: {summary['source_file']}")
-    console.print(f"  strings:    {summary['strings_file']}")
-    console.print(f"  streams:    {summary['streams_dir']}")
-    console.print("[bold]Top strings:[/bold]")
-    for entry in summary["top_strings"]:
-        console.print(f"  {entry['count']:>5}  {entry['token']!r}")
-
-
-@app.command()
 def replay(
     ctx: typer.Context,
     captures: list[Path] = typer.Argument(  # noqa: B008 - required by typer
-        ..., help=".pcapng / pre-extracted .json / chat .txt/.log / zone or target .csv inputs."
+        ..., help="Chat .txt/.log, Player.log, or zone/target .csv inputs."
     ),
     chat_dir: Path | None = typer.Option(  # noqa: B008 - required by typer
         None, "--chat-dir", help="Directory of Project Gorgon chat logs."
     ),
     db_path: str | None = typer.Option(None, "--db", help="Override the SQLite database path."),
 ) -> None:
-    """Offline-ingest historical captures through the same parser and correlator."""
+    """Offline-ingest historical logs through the same parser and correlator."""
     from . import replay as replay_mod
 
     _apply_db(ctx, db_path)
@@ -293,7 +219,7 @@ def migrate(
     ),
     kind: str | None = typer.Option(
         None,
-        help="Force import kind: loot, zones, targets, chat-json, packets-json.",
+        help="Force import kind: loot, zones, targets, chat-json.",
     ),
     db_path: str | None = typer.Option(None, "--db", help="Override the SQLite database path."),
 ) -> None:

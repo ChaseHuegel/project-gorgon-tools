@@ -20,7 +20,7 @@ def test_status_default(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     config_file = _config_file(tmp_path)
     # Disable sources so warnings stay deterministic; daemon stopped.
-    write_updates({"capture.enabled": False, "chat.tail": False, "ocr.enabled": False}, str(config_file))
+    write_updates({"chat.tail": False, "ocr.enabled": False}, str(config_file))
     cfg_path = str(config_file)
 
     monkeypatch.setattr("gorgon_tracker.web.control.daemon_status", lambda dbp: {"pid": None, "running": False})
@@ -52,14 +52,14 @@ def test_put_config_validates_and_persists(tmp_path: Path, monkeypatch) -> None:
     config_file = _config_file(tmp_path)
     client = TestClient(build_web_app(str(tmp_path / "data/gorgon.db"), str(config_file)))
 
-    ok = client.put("/api/config", json={"updates": {"capture.interface": "eth0"}})
+    ok = client.put("/api/config", json={"updates": {"chat.poll_interval_s": 2.0}})
     assert ok.status_code == 200
-    assert ok.json()["config"]["capture"]["interface"] == "eth0"
+    assert ok.json()["config"]["chat"]["poll_interval_s"] == 2.0
 
     bad = client.put("/api/config", json={"updates": {"ocr.zones.region": [1, 2]}})
     assert bad.status_code == 422
 
-    assert "eth0" in config_file.read_text()
+    assert "poll_interval_s = 2.0" in config_file.read_text()
 
 
 def test_daemon_endpoints_mock() -> None:
@@ -103,7 +103,7 @@ def test_export_analysis_downloads_csv(tmp_path: Path) -> None:
     run_replay(
         conn,
         TrackerConfig(),
-        expand_inputs([files.capture_json, files.chat_log, files.zones_csv, files.targets_csv]),
+        expand_inputs([files.player_log, files.chat_log, files.zones_csv, files.targets_csv]),
     )
     conn.close()
 

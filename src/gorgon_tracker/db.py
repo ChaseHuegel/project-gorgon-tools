@@ -109,8 +109,8 @@ CREATE INDEX IF NOT EXISTS idx_loot_publications_published_at ON loot_publicatio
 """
 
 # v7: per-encounter activity tracking. One row per (encounter, activity); the
-# unique key dedupes the same action reported by packet transitions, chat
-# markers, and corpse descriptions. Drop rates divide by these rows so a skin
+# unique key dedupes the same action reported by chat markers and corpse
+# descriptions. Drop rates divide by these rows so a skin
 # drop is counted against skinned encounters, not every encounter (see the
 # reworked v_drop_rates view). Encounters are now written eagerly at their
 # first sighting with their zone, so corpses that yield no drops still count
@@ -287,31 +287,6 @@ def insert_raw_event(
             "payload_json": json.dumps(payload),
             "dedup_hash": dedup_hash,
             "created_at": utc_now_ms(),
-        },
-    )
-
-
-def insert_source(
-    conn: sqlite3.Connection,
-    session_id: int,
-    raw_event_id: int,
-    captured_at: int,
-    monster: str,
-    can_skin: bool,
-    can_butcher: bool,
-    can_extract: bool,
-) -> int:
-    return _insert(
-        conn,
-        "sources",
-        {
-            "session_id": session_id,
-            "raw_event_id": raw_event_id,
-            "captured_at": captured_at,
-            "monster": monster,
-            "can_skin": int(can_skin),
-            "can_butcher": int(can_butcher),
-            "can_extract": int(can_extract),
         },
     )
 

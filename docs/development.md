@@ -56,11 +56,6 @@ Canonical source: `src/gorgon_tracker/config.py` (pydantic models). The sample f
 | Section | Key | Default | Meaning |
 |---|---|---|---|
 | `[db]` | `path` | `data/gorgon.db` | SQLite database location |
-| `[capture]` | `enabled` | `true` | Packet capture master switch |
-| `[capture]` | `tshark_path` | `tshark` | tshark binary |
-| `[capture]` | `interface` | `auto` | tshark interface, or auto-discovery |
-| `[capture]` | `ports` | `[]` | Ports to sniff (set by `find-ports`) |
-| `[capture]` | `bpf` | `""` | Explicit filter; wins over `ports` |
 | `[chat]` | `log_dir` | `""` | ChatLogs dir (auto-detected) |
 | `[chat]` | `tail` | `true` | Tail chat log |
 | `[chat]` | `poll_interval_s` | `1.0` | Chat poll interval |
@@ -80,8 +75,6 @@ Canonical source: `src/gorgon_tracker/config.py` (pydantic models). The sample f
 | `[ocr.targets]` | `interval_s` | `0.5` | Target OCR interval |
 | `[ocr.targets]` | `heartbeat_s` | null | Heartbeat |
 | `[correlate]` | `buffer_seconds` | `10.0` | Loot correlation window |
-| `[correlate]` | `session_timeout` | `3.0` | Encounter timeout |
-| `[correlate]` | `retroactive_threshold` | `0.9` | Packet activity retro window |
 | `[correlate]` | `activity_window_seconds` | `2.0` | Corpse-description/chat activity window |
 | `[correlate]` | `target_fallback_seconds` | `3.0` | Max target sighting age |
 | `[correlate]` | `search_corroboration_seconds` | `2.0` | Corpse-search corroboration window |
