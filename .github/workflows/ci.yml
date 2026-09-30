@@ -49,4 +49,4 @@ jobs:
         run: npm run build
         working-directory: web
       - name: Verify SPA is packaged
-        run: python -c "from gorgon_tracker.web import build_web_app; from gorgon_tracker import web; import importlib, pathlib; assert (pathlib.Path(web.__file__).parent/'static').is_dir(); print('static built')"
+        run: test -d src/gorgon_tracker/static/app && test -d src/gorgon_tracker/static/public && echo "static built"
