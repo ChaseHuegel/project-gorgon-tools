@@ -43,7 +43,7 @@ def main() -> int:
         "--include-package-data=gorgon_tracker",
     ]
     for module in _INCLUDE_MODULES:
-        cmd += ["--include-module", module]
+        cmd += [f"--include-module={module}"]
     cmd += [
         f"--output-dir={_OUTPUT_DIR}",
         "--output-filename=gorgon-tracker",
