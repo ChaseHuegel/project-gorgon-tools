@@ -71,7 +71,8 @@ Builder: `build_control_router` at `src/gorgon_tracker/web.py:53-467`.
 | PUT | `/api/config` | Partial config write | `{updates: {"section.key": value}}` (non-empty); `422` on pydantic error | `{path, config}` |
 | POST | `/api/daemon/start` | Spawn capture daemon | — | daemon status |
 | POST | `/api/daemon/stop` | SIGTERM the daemon | — | daemon status |
-| POST | `/api/replay` | Offline replay (upload and/or server paths) | multipart: `paths[]`, `chat_dir`, `files[]` | `{inputs, session_id, parsed_files, loot_kept, zones, targets, burials, activities, encounters, encounter_activities, drops}` |
+| POST | `/api/ports/discover` | Detect game ports + BPF | `{write_config: false}` | `{tcp, udp, bpf, persisted, found}` |
+| POST | `/api/replay` | Offline replay (upload and/or server paths) | multipart: `paths[]`, `chat_dir`, `files[]` | `{inputs, session_id, parsed_files, windows, sources, loot_kept, loot_filtered, zones, targets, burials, activities, encounters, encounter_activities, drops}` |
 | POST | `/api/migrate` | Import legacy CSV/JSON | multipart: `paths[]`, `kind`, `files[]` | `{imported:[{file, session_id, kind, imported}]}` |
 | POST | `/api/backfill` | Rebuild encounter rows and the activity ledger from raw events (or from drops for legacy sessions) | — | `{sessions:[{session_id, encounters_created, encounters_matched, derived, activities}]}` |
 | GET | `/api/export` | Loot CSV download | `since` (ISO string) | `text/csv` attachment |
@@ -111,6 +112,7 @@ Written by `src/gorgon_tracker/ingest.py`:
 
 | `source` | Payload |
 |---|---|
+| `packet` | `{monster, can_skin, can_butcher, can_extract}` |
 | `chat` | loot: `{item, amount, instance_id, entity_id, item_code_id, missed}`; bury: `{}`; activity: `{activity}` |
 | `unity` | loot payload (same shape as chat loot, `source_class` `unity`) |
 | `unity_interaction` | `{entity_id}` |

@@ -57,7 +57,7 @@ Fallback column names `time`/`zone`/`target` are accepted (`csvs.py:28-41`).
 
 ## Migrate JSON intermediates
 
-Source: `src/gorgon_tracker/migrate.py`. Kind is detected from the filename (`filename` contains `zone` → zones, `target` → targets, `chat`/`parsed-chat` → chat-json, else loot).
+Source: `src/gorgon_tracker/migrate.py`. Kind is detected from the filename (`filename` contains `zone` → zones, `target` → targets, `chat`/`parsed-chat` → chat-json, `packet`/`parsed-packet` → packets-json, else loot).
 
 ### `parsed-chat*.txt` / chat JSON
 
@@ -68,7 +68,17 @@ A JSON list. Each entry:
 | `EventType` | `"Bury"` or `"Loot"`. |
 | `ItemName` | Item (loot only). |
 | `Amount` | Count (loot only). |
-| time | `\/Date(ms)\/` (`.NET`), an ISO string, or a chat-style timestamp (`_entry_time_ms`, `migrate.py:98-102`). |
+| time | `\/Date(ms)\/` (`.NET`), an ISO string, or a chat-style timestamp (`_entry_time_ms`, `migrate.py:113-117`). |
+
+### `parsed-packet*.txt` / packets JSON
+
+A JSON list, one entry per corpse-search frame:
+
+| Field | Meaning |
+|---|---|
+| `Monster` | Monster name. |
+| `CanSkin`, `CanButcher`, `CanExtract` | Flag truthiness; accepts bool, `None`, `"1"`, `"true"`, `"yes"` (`migrate.py:105-110`). |
+| time | Encodes the frame time. |
 
 ## Timestamps accepted anywhere (`timeutil.iso_to_ms`)
 

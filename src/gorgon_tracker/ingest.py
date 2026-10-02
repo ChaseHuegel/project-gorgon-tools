@@ -18,6 +18,7 @@ from .correlator import (
     ItemCode,
     LootDrop,
     LootEvent,
+    SourceEvent,
     TargetSighting,
     ZoneChange,
 )
@@ -113,6 +114,28 @@ class DbWriter:
     def raw_item_code(self, event: ItemCode) -> int:
         return self._raw(
             "unity_item_code", event.time_ms, {"instance_id": event.instance_id, "code": event.code}
+        )
+
+    def source(self, event: SourceEvent) -> int:
+        raw_id = self._raw(
+            "packet",
+            event.time_ms,
+            {
+                "monster": event.monster,
+                "can_skin": event.can_skin,
+                "can_butcher": event.can_butcher,
+                "can_extract": event.can_extract,
+            },
+        )
+        return db.insert_source(
+            self.conn,
+            self.session_id,
+            raw_id,
+            event.time_ms,
+            event.monster,
+            event.can_skin,
+            event.can_butcher,
+            event.can_extract,
         )
 
     def target(self, sighting: TargetSighting) -> int:

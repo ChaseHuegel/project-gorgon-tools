@@ -44,7 +44,7 @@ def _populated(tmp_path: Path) -> Path:
     run_replay(
         conn,
         TrackerConfig(),
-        expand_inputs([files.player_log, files.chat_log, files.zones_csv, files.targets_csv]),
+        expand_inputs([files.capture_json, files.chat_log, files.zones_csv, files.targets_csv]),
     )
     conn.close()
     return tmp_path / "public.db"

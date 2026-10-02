@@ -64,6 +64,22 @@ export default function ConfigPage() {
         </FormField>
       </Section>
 
+      <Section title="Capture (packet) ">
+        <Toggle label="Enabled" checked={cfg.capture.enabled} onChange={(v) => set("capture", { ...cfg.capture, enabled: v })} />
+        <FormField label="tshark path">
+          <TextInput value={cfg.capture.tshark_path} onChange={(e) => set("capture", { ...cfg.capture, tshark_path: e.target.value })} />
+        </FormField>
+        <FormField label="Interface">
+          <TextInput value={cfg.capture.interface} onChange={(e) => set("capture", { ...cfg.capture, interface: e.target.value })} />
+        </FormField>
+        <FormField label="Ports (comma-separated)" hint="Set automagically from 'find-ports' on the Import/Export page.">
+          <TextInput value={cfg.capture.ports.join(", ")} onChange={(e) => set("capture", { ...cfg.capture, ports: numList(e.target.value) })} />
+        </FormField>
+        <FormField label="BPF filter">
+          <TextInput value={cfg.capture.bpf} onChange={(e) => set("capture", { ...cfg.capture, bpf: e.target.value })} />
+        </FormField>
+      </Section>
+
       <Section title="Chat">
         <Toggle label="Tail chat logs" checked={cfg.chat.tail} onChange={(v) => set("chat", { ...cfg.chat, tail: v })} />
         <FormField label="Log directory">
@@ -100,6 +116,12 @@ export default function ConfigPage() {
       <Section title="Correlation">
         <FormField label="Buffer (s)">
           <NumberInput value={cfg.correlate.buffer_seconds} onChange={(e) => set("correlate", { ...cfg.correlate, buffer_seconds: num(e.target.value) })} />
+        </FormField>
+        <FormField label="Session timeout (s)">
+          <NumberInput value={cfg.correlate.session_timeout} onChange={(e) => set("correlate", { ...cfg.correlate, session_timeout: num(e.target.value) })} />
+        </FormField>
+        <FormField label="Retroactive threshold (s)">
+          <NumberInput value={cfg.correlate.retroactive_threshold} onChange={(e) => set("correlate", { ...cfg.correlate, retroactive_threshold: num(e.target.value) })} />
         </FormField>
       </Section>
 

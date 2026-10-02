@@ -15,7 +15,7 @@ def _populated(tmp_path: Path):
     run_replay(
         conn,
         TrackerConfig(),
-        expand_inputs([files.player_log, files.chat_log, files.zones_csv, files.targets_csv]),
+        expand_inputs([files.capture_json, files.chat_log, files.zones_csv, files.targets_csv]),
     )
     return conn
 
@@ -24,7 +24,7 @@ def test_export_matches_legacy_header_and_rows(tmp_path: Path) -> None:
     conn = _populated(tmp_path)
     buffer = io.StringIO()
     count = export.export_loot_csv(conn, buffer)
-    assert count == 6
+    assert count == 5
     lines = buffer.getvalue().splitlines()
     assert lines[0] == "Time,Source,ID,Activity,Item,Amount,Status,LagTime,Zone"
     assert all(len(line.split(",")) == 9 for line in lines[1:])
@@ -37,5 +37,5 @@ def test_export_since_filters(tmp_path: Path) -> None:
     later = scenario.at(10.0)
     buffer = io.StringIO()
     count = export.export_loot_csv(conn, buffer, since_ms=later)
-    assert count == 4  # drops at rel 12.0, 20.0, 33.0 and 60.0
+    assert count == 3  # drops at rel 12.0, 20.0 and 33.0
     conn.close()

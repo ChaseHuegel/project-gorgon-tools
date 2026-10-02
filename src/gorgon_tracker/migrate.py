@@ -9,7 +9,7 @@ from typing import Any
 
 from . import db
 from .config import TrackerConfig
-from .correlator import BuryEvent, LootDrop, LootEvent
+from .correlator import BuryEvent, LootDrop, LootEvent, SourceEvent
 from .ingest import DbWriter
 from .parsers import csvs as csv_parser
 from .timeutil import iso_to_ms
@@ -23,6 +23,8 @@ def _kind_of(path: Path) -> str:
         return "targets"
     if "parsed-chat" in name or "chat" in name:
         return "chat-json"
+    if "parsed-packet" in name or "packet" in name:
+        return "packets-json"
     return "loot"
 
 
@@ -79,12 +81,33 @@ def import_file(
                     )
                 )
             count += 1
+    elif kind == "packets-json":
+        doc = json.loads(path.read_text(encoding="utf-8-sig", errors="replace"))
+        for entry in doc:
+            writer.source(
+                SourceEvent(
+                    time_ms=_entry_time_ms(entry),
+                    monster=entry.get("Monster", ""),
+                    can_skin=_flag(entry.get("CanSkin")),
+                    can_butcher=_flag(entry.get("CanButcher")),
+                    can_extract=_flag(entry.get("CanExtract")),
+                )
+            )
+            count += 1
     else:
         raise ValueError(f"cannot determine type of {path}")
 
     writer.close_encounters()
     writer.commit()
     return kind, count
+
+
+def _flag(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in ("1", "true", "yes")
 
 
 def _entry_time_ms(entry: dict[str, Any]) -> int:

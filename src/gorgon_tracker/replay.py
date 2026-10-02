@@ -21,14 +21,18 @@ from .correlator import (
     InteractionStart,
     ItemCode,
     LootEvent,
+    SourceEvent,
     TargetSighting,
     ZoneChange,
 )
 from .ingest import DbWriter
 from .parsers import chat as chat_parser
 from .parsers import csvs as csv_parser
+from .parsers import packets as packet_parser
 from .parsers import playerlog as playerlog_parser
 
+_CAPTURE_SUFFIXES = (".pcapng", ".pcap", ".cap")
+_JSON_SUFFIXES = (".json",)
 _CHAT_SUFFIXES = (".log", ".txt")
 _PLAYERLOG_NAMES = ("Player.log", "Player-prev.log")
 _PLAYERLOG_FIRST_RE = re.compile(r"^\[\d\d:\d\d:\d\d\].*LocalPlayer: Process")
@@ -49,6 +53,10 @@ def _classify(path: Path) -> str:
     if path.name in _PLAYERLOG_NAMES:
         return "playerlog"
     suffix = path.suffix.lower()
+    if suffix in _CAPTURE_SUFFIXES:
+        return "pcap"
+    if suffix in _JSON_SUFFIXES:
+        return "json"
     if suffix in _CHAT_SUFFIXES or suffix == "":
         # Player.log snapshots use the same `.log` suffix; sniff the header.
         with path.open("r", encoding="utf-8-sig", errors="replace") as fh:
@@ -59,6 +67,11 @@ def _classify(path: Path) -> str:
     if suffix == ".csv":
         return "csv"
     return "unknown"
+
+
+def _is_window_valid(windows: list[tuple[int, int]], time_ms: int, buffer_seconds: float) -> bool:
+    buffer_ms = int(buffer_seconds * 1000)
+    return any(start <= time_ms <= end + buffer_ms for start, end in windows)
 
 
 def run_replay(
@@ -73,11 +86,15 @@ def run_replay(
     writer = DbWriter(conn, session_id)
     correlator = Correlator(
         buffer_seconds=cfg.correlate.buffer_seconds,
+        session_timeout=cfg.correlate.session_timeout,
+        retroactive_threshold=cfg.correlate.retroactive_threshold,
         target_fallback_seconds=cfg.correlate.target_fallback_seconds,
         search_corroboration_seconds=cfg.correlate.search_corroboration_seconds,
         activity_window_seconds=cfg.correlate.activity_window_seconds,
     )
 
+    windows: list[tuple[int, int]] = []
+    source_events: list[SourceEvent] = []
     loot_events: list[LootEvent] = []
     bury_events: list[BuryEvent] = []
     activity_events: list[ActivityEvent] = []
@@ -92,7 +109,37 @@ def run_replay(
         kind = _classify(path)
         if not path.exists():
             raise FileNotFoundError(f"replay input not found: {path}")
-        if kind == "chat":
+        if kind == "pcap":
+            doc = packet_parser.extract_pcap(
+                path, tshark_path=cfg.capture.tshark_path
+            )
+            windows.append((doc.start_ms, doc.end_ms))
+            source_events.extend(
+                SourceEvent(
+                    time_ms=ev.time_ms,
+                    monster=ev.monster,
+                    can_skin=ev.can_skin,
+                    can_butcher=ev.can_butcher,
+                    can_extract=ev.can_extract,
+                )
+                for ev in doc.events
+            )
+            parsed_files += 1
+        elif kind == "json":
+            doc = packet_parser.parse_capture_doc(packet_parser.load_json_doc(path))
+            windows.append((doc.start_ms, doc.end_ms))
+            source_events.extend(
+                SourceEvent(
+                    time_ms=ev.time_ms,
+                    monster=ev.monster,
+                    can_skin=ev.can_skin,
+                    can_butcher=ev.can_butcher,
+                    can_extract=ev.can_extract,
+                )
+                for ev in doc.events
+            )
+            parsed_files += 1
+        elif kind == "chat":
             for event in chat_parser.parse_chat_file(path):
                 _route_chat_event(event, loot_events, bury_events, activity_events)
             parsed_files += 1
@@ -125,6 +172,17 @@ def run_replay(
             for event in chat_parser.parse_chat_file(path):
                 _route_chat_event(event, loot_events, bury_events, activity_events)
 
+    # Drop validity: only loot that falls inside a packet-capture window is kept.
+    filtered = 0
+    if windows:
+        kept: list[LootEvent] = []
+        for event in loot_events:
+            if _is_window_valid(windows, event.time_ms, cfg.correlate.buffer_seconds):
+                kept.append(event)
+            else:
+                filtered += 1
+        loot_events = kept
+
     # Merge everything into one timeline (loot sorts before state changes at equal time).
     timeline: list[tuple[int, int, object]] = []
     for zone_change in zone_changes:
@@ -133,6 +191,8 @@ def run_replay(
         timeline.append((sighting.time_ms, 0, sighting))
     for loot_evt in loot_events:
         timeline.append((loot_evt.time_ms, 1, loot_evt))
+    for source_evt in source_events:
+        timeline.append((source_evt.time_ms, 2, source_evt))
     for bury_evt in bury_events:
         timeline.append((bury_evt.time_ms, 2, bury_evt))
     for activity_evt in activity_events:
@@ -170,7 +230,10 @@ def run_replay(
     return {
         "session_id": session_id,
         "parsed_files": parsed_files,
+        "windows": len(windows),
+        "sources": len(source_events),
         "loot_kept": len(loot_events),
+        "loot_filtered": filtered,
         "zones": len(zone_changes),
         "targets": len(target_sightings),
         "burials": len(bury_events),
@@ -205,10 +268,13 @@ def _ingest_timeline_event(
     elif isinstance(timeline_event, CorpseSearch):
         writer.corpse_search(timeline_event)
         correlator.ingest_corpse_search(timeline_event)
-    else:
-        assert isinstance(timeline_event, ItemCode)
+    elif isinstance(timeline_event, ItemCode):
         writer.raw_item_code(timeline_event)
         correlator.note_item_code(timeline_event)
+    else:
+        assert isinstance(timeline_event, SourceEvent)
+        writer.source(timeline_event)
+        correlator.ingest_source(timeline_event)
 
 
 def _read_header(path: Path) -> list[str]:

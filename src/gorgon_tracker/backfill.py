@@ -26,6 +26,7 @@ from .correlator import (
     InteractionStart,
     ItemCode,
     LootEvent,
+    SourceEvent,
     TargetSighting,
     ZoneChange,
 )
@@ -36,6 +37,8 @@ def _correlator_from_snapshot(snapshot: dict[str, Any] | None) -> Correlator:
     values = (snapshot or {}).get("correlate") or {}
     return Correlator(
         buffer_seconds=values.get("buffer_seconds", 10.0),
+        session_timeout=values.get("session_timeout", 3.0),
+        retroactive_threshold=values.get("retroactive_threshold", 0.9),
         target_fallback_seconds=values.get("target_fallback_seconds", 3.0),
         search_corroboration_seconds=values.get("search_corroboration_seconds", 2.0),
         activity_window_seconds=values.get("activity_window_seconds", 2.0),
@@ -44,9 +47,13 @@ def _correlator_from_snapshot(snapshot: dict[str, Any] | None) -> Correlator:
 
 def _to_event(captured_at: int, source: str, payload: dict[str, Any]) -> object | None:
     if source == "packet":
-        # Packet-era raw events are no longer decodable; skip them so old
-        # sessions still backfill on their Unity/chat/OCR events.
-        return None
+        return SourceEvent(
+            time_ms=captured_at,
+            monster=payload["monster"],
+            can_skin=bool(payload.get("can_skin")),
+            can_butcher=bool(payload.get("can_butcher")),
+            can_extract=bool(payload.get("can_extract")),
+        )
     if source in ("chat", "unity"):
         if "item" in payload:
             return LootEvent(
@@ -93,6 +100,8 @@ def _feed(correlator: Correlator, event: object) -> None:
         correlator.ingest_bury(event)
     elif isinstance(event, ActivityEvent):
         correlator.ingest_activity(event)
+    elif isinstance(event, SourceEvent):
+        correlator.ingest_source(event)
     elif isinstance(event, InteractionStart):
         correlator.ingest_interaction(event)
     elif isinstance(event, CorpseSearch):

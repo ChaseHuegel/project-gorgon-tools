@@ -8,8 +8,8 @@
 # The service runs in the foreground; gorgon-tracker writes a pidfile next to its
 # database so `gorgon-tracker stop` still works for manual runs.
 #
-# NOTE: the service user must be able to reach the game's Proton chat logs and
-# the display for OCR.
+# NOTE: tshark needs CAP_NET_RAW (see README) and the service user must be able
+# to reach the game's Proton chat logs and the display for OCR.
 
 [Unit]
 Description=Project Gorgon loot tracker
@@ -18,11 +18,11 @@ After=network.target
 
 [Service]
 Type=simple
-# Point --config at your gorgon-tracker.toml (db path, chat log dir, playerlog path).
+# Point --config at your gorgon-tracker.toml (db path, chat log dir, capture iface).
 ExecStart=/usr/local/bin/gorgon-tracker run --config /etc/gorgon-tracker/gorgon-tracker.toml
 Restart=on-failure
 RestartSec=5
-# Point --config at your gorgon-tracker.toml (db path, chat log dir, playerlog path).
+# Point --config at your gorgon-tracker.toml (db path, chat log dir, capture iface).
 ExecStart=/usr/local/bin/gorgon-tracker run --config /etc/gorgon-tracker/gorgon-tracker.toml
 Restart=on-failure
 RestartSec=5

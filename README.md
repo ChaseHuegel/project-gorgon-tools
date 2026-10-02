@@ -3,7 +3,7 @@
 Cross-platform (Linux-first) loot and drop-rate tracker for **Project Gorgon**.
 
 This is the Python successor to the PowerShell scripts in `loot-tracker/` (kept for
-reference). It captures game data at runtime (chat-log tailing, the
+reference). It captures game data at runtime (packet inspection, chat-log tailing, the
 game's Unity `Player.log`, and screen OCR), correlates encounters with the loot they
 drop, and persists everything to a single SQLite database — no post-processing, no
 CSV-as-database.
@@ -13,28 +13,31 @@ Agent navigation and development docs: [`AGENTS.md`](AGENTS.md).
 ## Features
 
 - One command (`run`) opens a capture session; capture happens passively in the background.
-- Sources: incremental tailing of the Proton chat log,
+- Sources: live packet capture via `tshark`, incremental tailing of the Proton chat log,
   the game's Unity `Player.log` (authoritative inventory pickups, corpse attribution with
   killer damage tables, missed-loot on inventory-full, coin pickups), and OCR
   (tesseract) of the on-screen zone and target regions.
 - Loot is classified by activity (`Skinning`/`Butchering`/`Extracting`/`Looting`/`Harvesting`):
   corpse-description "skinned/butchered/extracted" transitions in `Player.log` and
-  `You skin/butcher/extract ...` chat status lines label nearby pickups;
-  a corpse that already shows the action never relabels.
+  `You skin/butcher/extract ...` chat status lines label nearby pickups, alongside the
+  packet `can_*` flag transitions; a corpse that already shows the action never relabels.
 - Drop rates are per activity. Each rate divides by the encounters where that activity
   happened, so a skin drop counts against skinned corpses, not against every dead deer.
   The dashboard has an activity selector on the rates table and the heatmap matrix.
 - Everything lands in SQLite (WAL): raw events + typed events + correlated `loot_drops`,
   grouped into sessions you can start and stop freely.
-- Offline tools: `replay` historical chat/Player.log/CSV bundles, `migrate` legacy
+- Offline tools: `replay` historical `.pcapng`/JSON/chat/CSV bundles, `migrate` legacy
   PowerShell outputs, `export` a legacy-compatible CSV, and `serve` a read-only web API.
 - `backfill-encounters` rebuilds encounter and activity records for data captured before
   per-activity rates existed (it replays each session's raw events).
-- `calibrate` tunes OCR regions.
+- `sniff-inspect` captures game traffic (raw pcap retained) and inventories plaintext
+  strings, checking whether loot/status messages cross the wire for tighter correlation.
+- `find-ports` auto-detects the game's ephemeral network ports; `calibrate` tunes OCR regions.
 
 ## Requirements
 
 - Python 3.11+
+- `tshark` (Wireshark) — packet capture
 - `tesseract` — screen OCR
 - Project Gorgon running via Steam Proton/Wine on the same host
 
@@ -46,13 +49,20 @@ source .venv/bin/activate
 pip install -e .                # or ".[serve]" for the web API, ".[dev]" for tests
 ```
 
+Linux capture privileges (tshark needs raw sockets):
+
+```sh
+sudo setcap cap_net_raw,cap_net_admin=eip $(readlink -f "$(which tshark)")
+# or: sudo usermod -a -G wireshark "$USER"   # and re-login
+```
+
 OCR: `sudo apt install tesseract-ocr` (add `tesseract-ocr-eng` if data is separate).
 
 ### Standalone executables
 
 Prebuilt one-file executables for Linux and Windows are available. The build
-uses Nuitka and runs in CI. You still need tesseract installed on
-the target machine; the executable detects it and prints an install hint.
+uses Nuitka and runs in CI. You still need tshark and tesseract installed on
+the target machine; the executable detects them and prints install hints.
 Build and distribution details: `docs/packaging.md`.
 
 ```sh
@@ -63,8 +73,10 @@ python tools/build_exe.py
 
 ```sh
 gorgon-tracker config                 # show effective configuration
+gorgon-tracker find-ports             # print the BPF filter for the running game
 gorgon-tracker run                    # capture in the foreground; Ctrl-C to stop
 gorgon-tracker run --daemon           # background; stop with `gorgon-tracker stop`
+gorgon-tracker sniff-inspect          # capture game traffic and inventory plaintext strings
 gorgon-tracker status                 # sessions + per-source event counts
 gorgon-tracker serve                  # public read-only API + public UI at http://127.0.0.1:8000
 gorgon-tracker web                    # local tool UI: full read + control APIs at http://127.0.0.1:8000
@@ -87,7 +99,7 @@ capture daemon, and lets you browse loot data — no terminal needed for everyda
 - **Config** — edit `gorgon-tracker.toml` from forms (only changed keys are written,
   so comments and formatting survive).
 - **Calibrate** — drag a region on a live snapshot to tune OCR zones/targets.
-- **Import / Export** — replay/migrate historical captures by file
+- **Import / Export** — find ports, and replay/migrate historical captures by file
   upload or server path.
 
 ### Public deployment
@@ -140,6 +152,10 @@ chat log path automatically; the default probes common paths:
 ```toml
 [db]
 path = "data/gorgon.db"
+
+[capture]
+interface = "eth0"        # or "auto"; set after `find-ports`
+bpf = "tcp.port == 45000 or tcp.port == 45001"
 
 [chat]
 # auto-detected when empty; set explicitly if the game is on a custom Steam library:
@@ -228,8 +244,8 @@ keywords, game data version). Snapshot location can be pinned:
 ### Migrating historical data
 
 ```sh
-# Replay chat logs and Player.log snapshots (zone/target CSVs and legacy loot CSVs also work):
-gorgon-tracker replay chatsession.log Player.log zones.csv targets.csv
+# Replay old packet captures (auto-discovers tshark JSON, chat logs, zone/target CSVs):
+gorgon-tracker replay captures/*.pcapng chatsession.log zones.csv targets.csv
 
 # Import legacy PowerShell outputs (loot.csv, zones.csv, targets.csv, parsed-*.txt):
 gorgon-tracker migrate loot.csv zones.csv targets.csv

@@ -7,9 +7,11 @@ import { FormField, TextInput } from "../components/FormField";
 import { Page } from "../components/Page";
 import { StatusBadge } from "../components/StatusBadge";
 
-type Kind = "zones" | "targets" | "loot" | "chat-json";
+type Kind = "zones" | "targets" | "loot" | "chat-json" | "packets-json";
 
 export default function ImportExportPage() {
+  const [ports, setPorts] = useState<{ found: boolean; bpf: string; persisted?: boolean } | null>(null);
+  const [portBusy, setPortBusy] = useState(false);
   const [namesInfo, setNamesInfo] = useState<NamesInfo | null>(null);
   const [namesBusy, setNamesBusy] = useState(false);
   const [catalogInfo, setCatalogInfo] = useState<CatalogInfo | null>(null);
@@ -29,6 +31,19 @@ export default function ImportExportPage() {
 
   function push(kind: string, text: string, ok = true) {
     setLog((l) => [{ kind, text, ok }, ...l].slice(0, 12));
+  }
+
+  async function discover(persist: boolean) {
+    setPortBusy(true);
+    try {
+      const res = await api.discoverPorts(persist);
+      setPorts(res);
+      if (!res.found) push("ports", "No game process found. Start the game and retry.", false);
+    } catch (e) {
+      push("ports", e instanceof Error ? e.message : String(e), false);
+    } finally {
+      setPortBusy(false);
+    }
   }
 
   useEffect(() => {
@@ -137,6 +152,22 @@ export default function ImportExportPage() {
         </a>
       }
     >
+      <Card title="Find game ports">
+        <p style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
+          Detect the running game's ephemeral ports and build a capture BPF filter.
+        </p>
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          <button onClick={() => discover(false)} disabled={portBusy} style={btnStyle}>{portBusy ? "…" : "Discover"}</button>
+          <button onClick={() => discover(true)} disabled={portBusy} style={ghostBtn}>Discover & write to config</button>
+        </div>
+        {ports && (
+          <p style={{ marginTop: "0.5rem" }}>
+            <StatusBadge ok={ports.found} label={ports.found ? "game found" : "no game"} />
+            {ports.bpf && <code style={{ display: "block", marginTop: "0.4rem" }}>{ports.bpf}</code>}
+          </p>
+        )}
+      </Card>
+
       <Card title="Name data">
         <p style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
           Canonical zone and monster names used to correct OCR reads. Fetch the latest lists from the
@@ -188,8 +219,8 @@ export default function ImportExportPage() {
         </div>
       </Card>
 
-      <Card title="Replay historical logs">
-        <FilePicker accept=".log,.txt,.csv" multiple paths={paths} onFiles={setBytes} onPaths={setPaths} />
+      <Card title="Replay historical captures">
+        <FilePicker accept=".pcapng,.pcap,.json,.log,.txt,.csv" multiple paths={paths} onFiles={setBytes} onPaths={setPaths} />
         <FormField label="Chat directory (optional)">
           <TextInput value={chatDir} onChange={(e) => setChatDir(e.target.value)} placeholder="/path/to/ChatLogs" />
         </FormField>
@@ -209,6 +240,7 @@ export default function ImportExportPage() {
               <option value="zones">zones</option>
               <option value="targets">targets</option>
               <option value="chat-json">chat-json</option>
+              <option value="packets-json">packets-json</option>
             </select>
           </label>
         </div>
@@ -305,6 +337,8 @@ const btnStyle: React.CSSProperties = {
   color: "#fff",
   cursor: "pointer",
 };
+
+const ghostBtn: React.CSSProperties = { ...btnStyle, background: "transparent", color: "var(--accent)" };
 
 const dangerBtn: React.CSSProperties = {
   padding: "0.5rem 1rem",

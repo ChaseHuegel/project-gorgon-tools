@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, FastAPI, File, Form, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Body, FastAPI, File, Form, HTTPException, Response, UploadFile
 from pydantic import ValidationError
 
 from . import config_write as config_write_mod
@@ -55,6 +55,7 @@ def build_control_router(db_path: str, config_path: str | None = None) -> APIRou
     from . import export as export_mod
     from . import migrate as migrate_mod
     from . import names as names_mod
+    from . import ports as ports_mod
     from . import replay as replay_mod
 
     router = APIRouter(prefix="/api")
@@ -169,6 +170,22 @@ def build_control_router(db_path: str, config_path: str | None = None) -> APIRou
     @router.post("/daemon/stop")
     def stop_daemon() -> dict[str, Any]:
         return control.daemon_stop(db_path)
+
+    # --- ports --------------------------------------------------------------
+
+    @router.post("/ports/discover")
+    def discover_ports(write_config: bool = Body(default=False, embed=True)) -> dict[str, Any]:
+        tcp, udp = ports_mod.discover_ports()
+        if not tcp and not udp:
+            return {"tcp": [], "udp": [], "bpf": "", "persisted": False, "found": False}
+        bpf = ports_mod.build_bpf(sorted(tcp), sorted(udp))
+        persisted = False
+        if write_config:
+            config_write_mod.write_updates(
+                {"capture.ports": sorted(tcp | udp), "capture.bpf": bpf}, config_path
+            )
+            persisted = True
+        return {"tcp": sorted(tcp), "udp": sorted(udp), "bpf": bpf, "persisted": persisted, "found": True}
 
     # --- offline operations (upload + server paths) -------------------------
 

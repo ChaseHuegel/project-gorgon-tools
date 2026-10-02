@@ -83,17 +83,25 @@ def daemon_stop(db_path: str, timeout_s: float = 10.0) -> dict[str, Any]:
 
 def setup_warnings(cfg: TrackerConfig) -> list[str]:
     """Return actionable warnings for missing capture prerequisites."""
+    from .pipeline import has_capture_ok
+
     warnings: list[str] = []
+    capture_ok = cfg.capture.enabled and has_capture_ok(cfg)
     chat_ok = cfg.chat.tail and bool(cfg.chat.log_dir)
     tesseract_ok = resolve_tesseract(cfg.ocr.tesseract_path) is not None
     ocr_ok = cfg.ocr.enabled and tesseract_ok
 
     if cfg.ocr.enabled and not tesseract_ok:
         warnings.append(f"tesseract is missing. {tesseract_hint()}")
+    if cfg.capture.enabled and not capture_ok:
+        warnings.append(
+            "Packet capture will start but can't detect the game yet; launch Project Gorgon so "
+            "its ports can be auto-discovered (capture.ports/bpf may also be set explicitly)."
+        )
     if cfg.chat.tail and not chat_ok:
         warnings.append(
             "Chat tailing has no log directory; set chat.log_dir or ensure the game ran once."
         )
-    if not chat_ok and not ocr_ok:
+    if not capture_ok and not chat_ok and not ocr_ok:
         warnings.append("No capture sources are enabled; a run would idle until stopped.")
     return warnings

@@ -15,6 +15,14 @@ class DbConfig(BaseModel):
     path: str = "data/gorgon.db"
 
 
+class CaptureConfig(BaseModel):
+    enabled: bool = True
+    tshark_path: str = "tshark"
+    interface: str = "auto"
+    ports: list[int] = Field(default_factory=list)
+    bpf: str = ""
+
+
 class ChatConfig(BaseModel):
     log_dir: str = ""
     tail: bool = True
@@ -59,10 +67,13 @@ class OcrConfig(BaseModel):
 
 class CorrelateConfig(BaseModel):
     buffer_seconds: float = 10.0
+    session_timeout: float = 3.0
+    retroactive_threshold: float = 0.9
     # How close to a corpse-description transition (Unity Player.log `skinned/
     # butchered/extracted` line) or a chat status marker a drop must be to inherit
     # that activity. The Unity log stamps whole seconds, so a pickup and the
-    # description update naming the action can be ~1s apart.
+    # description update naming the action can be ~1s apart (the 0.9s retroactive
+    # threshold is tuned to packet timing and stays for the packet path).
     activity_window_seconds: float = 2.0
     # How stale a target sighting may be to compete with (or substitute for) a
     # monster source. Looting/harvesting targets the entity being looted, so a
@@ -129,6 +140,7 @@ class ServeConfig(BaseModel):
 
 class TrackerConfig(BaseModel):
     db: DbConfig = Field(default_factory=DbConfig)
+    capture: CaptureConfig = Field(default_factory=CaptureConfig)
     chat: ChatConfig = Field(default_factory=ChatConfig)
     playerlog: PlayerLogConfig = Field(default_factory=PlayerLogConfig)
     ocr: OcrConfig = Field(default_factory=OcrConfig)

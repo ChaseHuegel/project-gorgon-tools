@@ -1,6 +1,6 @@
 """Canonical zone/monster name lists: wiki fetch, snapshot files, fuzzy OCR correction.
 
-Names enter the tracker through OCR. OCR text is noisy, so
+Names enter the tracker through OCR and packet capture. OCR text is noisy, so
 reads are corrected against canonical lists of known Project Gorgon zone and
 monster names. The lists ship with the package (``data/zones.txt`` /
 ``data/monsters.txt``) and can be refreshed from the community wiki via

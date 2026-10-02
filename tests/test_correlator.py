@@ -5,6 +5,7 @@ from gorgon_tracker.correlator import (
     Correlator,
     InteractionStart,
     LootEvent,
+    SourceEvent,
     TargetSighting,
     ZoneChange,
 )
@@ -14,14 +15,8 @@ def make(sec: float) -> int:
     return round(sec * 1000)
 
 
-def _corpse(sec: float, monster: str, entity_id: int, extractions=None, reward_items=None) -> CorpseSearch:
-    return CorpseSearch(
-        time_ms=make(sec),
-        monster=monster,
-        entity_id=entity_id,
-        extractions=extractions or {},
-        reward_items=reward_items,
-    )
+def src(sec: float, monster: str, skin=False, butcher=False, extract=False) -> SourceEvent:
+    return SourceEvent(time_ms=make(sec), monster=monster, can_skin=skin, can_butcher=butcher, can_extract=extract)
 
 
 def loot(sec: float, item: str, amount=1) -> LootEvent:
@@ -38,6 +33,8 @@ def _run(correlator: Correlator, events) -> list:
             correlator.ingest_loot(event)
         elif kind == "bury":
             correlator.ingest_bury(event)
+        elif kind == "source":
+            correlator.ingest_source(event)
         elif kind == "corpse":
             correlator.ingest_corpse_search(event)
         elif kind == "interaction":
@@ -47,17 +44,9 @@ def _run(correlator: Correlator, events) -> list:
     return correlator.finalize()
 
 
-def test_links_drop_to_most_recent_corpse() -> None:
+def test_links_drop_to_most_recent_source() -> None:
     c = Correlator()
-    drops = _run(
-        c,
-        [
-            ("interaction", InteractionStart(time_ms=make(0.0), entity_id=1)),
-            ("corpse", _corpse(1.0, "Rat", 1)),
-            ("loot", loot(3.0, "Bone")),
-            ("corpse", _corpse(4.0, "Rat", 1)),
-        ],
-    )
+    drops = _run(c, [("source", src(1.0, "Rat")), ("loot", loot(3.0, "Bone")), ("source", src(4.0, "Rat"))])
     assert len(drops) == 1
     assert drops[0].source == "Rat"
     assert drops[0].status == "Linked"
@@ -70,16 +59,7 @@ def test_chat_and_unity_same_second_dedupe_to_one() -> None:
     c = Correlator()
     chat_item = LootEvent(time_ms=make(10.0), item="Panther Tail", amount=1, source_class="chat")
     unity_item = LootEvent(time_ms=make(10.0), item="PantherTail", amount=1, source_class="unity", instance_id=-5)
-    drops = _run(
-        c,
-        [
-            ("interaction", InteractionStart(time_ms=make(0.0), entity_id=1)),
-            ("corpse", _corpse(9.0, "Fey Panther", 1)),
-            ("loot", chat_item),
-            ("loot", unity_item),
-            ("corpse", _corpse(11.0, "Fey Panther", 1)),
-        ],
-    )
+    drops = _run(c, [("source", src(9.0, "Fey Panther")), ("loot", chat_item), ("loot", unity_item)])
     assert len(drops) == 1
     assert drops[0].item == "Panther Tail"
     assert drops[0].source == "Fey Panther"
@@ -92,8 +72,7 @@ def test_orphan_uses_target_sighting() -> None:
         [
             ("target", TargetSighting(time_ms=make(9.5), name="Dire Wolf")),
             ("loot", loot(10.0, "Pelt")),
-            ("interaction", InteractionStart(time_ms=make(0.0), entity_id=1)),
-            ("corpse", _corpse(12.0, "Dire Wolf", 1)),
+            ("source", src(12.0, "Dire Wolf")),
         ],
     )
     assert len(drops) == 1
@@ -111,25 +90,64 @@ def test_ground_orphan_when_no_source_or_target() -> None:
     assert drops[0].lag_ms == 0
 
 
-def test_new_corpse_does_not_inherit_previous_skinning() -> None:
-    """A pickup on a new corpse whose description already shows skinned stays Looting."""
-    c = Correlator(activity_window_seconds=2.0)
+def test_retroactive_skinning() -> None:
+    c = Correlator()
     drops = _run(
         c,
         [
-            ("interaction", InteractionStart(time_ms=make(1.0), entity_id=501)),
-            ("corpse", _corpse(2.0, "Giant Bat", 501)),
-            ("loot", loot(3.0, "Bat Wing")),
-            ("corpse", _corpse(4.0, "Giant Bat", 501, {"skinned": "Bat Wing"})),
-            ("interaction", InteractionStart(time_ms=make(5.0), entity_id=502)),
-            ("loot", loot(5.5, "Bone")),
-            ("corpse", _corpse(6.0, "Giant Bat", 502, {"skinned": "Bat Wing"})),
+            ("source", src(0.0, "Giant Bat", skin=True)),
+            ("loot", loot(0.5, "Bat Wing")),
+            ("source", src(1.0, "Giant Bat", skin=False)),
         ],
     )
-    assert len(drops) == 2
-    assert drops[0].activity == "Skinning"  # the fresh verb on the first corpse
-    assert drops[1].activity == "Looting"  # the new corpse already showed skinned
-    assert drops[1].status == "Linked"
+    assert len(drops) == 1
+    assert drops[0].activity == "Skinning"
+    assert drops[0].lag_ms == 500
+
+
+def test_butchering_and_extracting() -> None:
+    c = Correlator()
+    drops = _run(
+        c,
+        [
+            ("source", src(0.0, "Boar", butcher=True)),
+            ("loot", loot(0.2, "Bacon")),
+            ("source", src(1.0, "Boar", extract=True)),
+            ("loot", loot(1.2, "Skull")),
+            ("source", src(2.0, "Boar")),
+        ],
+    )
+    assert [d.activity for d in drops] == ["Butchering", "Extracting"]
+
+
+def test_session_timeout_starts_new_encounter_and_resets_activity() -> None:
+    c = Correlator()
+    drops = _run(
+        c,
+        [
+            ("source", src(0.0, "Rat", skin=True)),
+            ("source", src(5.0, "Rat", skin=False)),  # 5s gap, 3s timeout -> new encounter
+            ("loot", loot(5.5, "Bone")),
+            ("source", src(6.0, "Rat")),
+        ],
+    )
+    assert len(drops) == 1
+    assert drops[0].activity == "Looting"  # no retroactive skin because new encounter
+    assert drops[0].status == "Linked"
+
+
+def test_skin_flag_updates_across_sources() -> None:
+    c = Correlator()
+    drops = _run(
+        c,
+        [
+            ("source", src(0.0, "Rat", skin=True)),
+            ("loot", loot(0.5, "Bone")),
+            ("source", src(1.0, "Rat", skin=False)),
+        ],
+    )
+    assert drops[0].activity == "Skinning"
+    assert len(drops[0].encounter_uuid) == 36  # uuid4 shape
 
 
 def test_bury_links_pending_drops_to_last_monster() -> None:
@@ -137,8 +155,7 @@ def test_bury_links_pending_drops_to_last_monster() -> None:
     drops = _run(
         c,
         [
-            ("interaction", InteractionStart(time_ms=make(0.0), entity_id=1)),
-            ("corpse", _corpse(0.0, "Rat", 1)),
+            ("source", src(0.0, "Rat")),
             ("loot", loot(1.0, "Bone")),
             ("loot", loot(1.5, "Pelt", 2)),
             ("bury", BuryEvent(time_ms=make(2.0))),
@@ -155,15 +172,13 @@ def test_zone_tracks_changes() -> None:
         c,
         [
             ("zone", ZoneChange(time_ms=make(0.0), zone="Old Graveyard")),
-            ("interaction", InteractionStart(time_ms=make(0.5), entity_id=1)),
-            ("corpse", _corpse(1.0, "Rat", 1)),
+            ("source", src(1.0, "Rat")),
             ("loot", loot(2.0, "Bone")),
-            ("corpse", _corpse(3.0, "Rat", 1)),
+            ("source", src(3.0, "Rat")),
             ("zone", ZoneChange(time_ms=make(4.0), zone="Fairy Glen")),
-            ("interaction", InteractionStart(time_ms=make(4.5), entity_id=2)),
-            ("corpse", _corpse(5.0, "Wolf", 2)),
+            ("source", src(5.0, "Wolf")),
             ("loot", loot(6.0, "Pelt")),
-            ("corpse", _corpse(7.0, "Wolf", 2)),
+            ("source", src(7.0, "Wolf")),
         ],
     )
     assert [d.zone for d in drops] == ["Old Graveyard", "Fairy Glen"]
@@ -171,14 +186,7 @@ def test_zone_tracks_changes() -> None:
 
 def test_finalize_flushes_pending() -> None:
     c = Correlator()
-    drops = _run(
-        c,
-        [
-            ("interaction", InteractionStart(time_ms=make(0.0), entity_id=1)),
-            ("corpse", _corpse(0.0, "Rat", 1)),
-            ("loot", loot(1.0, "Bone")),
-        ],
-    )
+    drops = _run(c, [("source", src(0.0, "Rat")), ("loot", loot(1.0, "Bone"))])
     assert len(drops) == 1
     assert drops[0].source == "Rat"
     assert drops[0].lag_ms == 0
@@ -186,10 +194,9 @@ def test_finalize_flushes_pending() -> None:
 
 def test_take_drops_clears_and_streams_produced_drops() -> None:
     c = Correlator(buffer_seconds=10.0)
-    c.ingest_interaction(InteractionStart(time_ms=make(0.0), entity_id=1))
-    c.ingest_corpse_search(_corpse(0.0, "Rat", 1))
+    c.ingest_source(src(0.0, "Rat"))
     c.ingest_loot(loot(1.0, "Bone"))
-    c.ingest_corpse_search(_corpse(2.0, "Rat", 1))
+    c.ingest_source(src(2.0, "Rat"))
     streamed = c.take_drops()
     assert len(streamed) == 1
     assert streamed[0].source == "Rat"
@@ -233,15 +240,7 @@ def test_flush_expired_keeps_recent_pending() -> None:
 
 def test_monster_link_records_evidence() -> None:
     c = Correlator()
-    drops = _run(
-        c,
-        [
-            ("interaction", InteractionStart(time_ms=make(0.0), entity_id=1)),
-            ("corpse", _corpse(1.0, "Rat", 1)),
-            ("loot", loot(3.0, "Bone")),
-            ("corpse", _corpse(4.0, "Rat", 1)),
-        ],
-    )
+    drops = _run(c, [("source", src(1.0, "Rat")), ("loot", loot(3.0, "Bone")), ("source", src(4.0, "Rat"))])
     drop = drops[0]
     assert drop.linked_via == "monster"
     assert drop.monster_name == "Rat"
@@ -273,8 +272,7 @@ def test_target_link_corroborated_by_search_stays_looting() -> None:
     drops = _run(
         c,
         [
-            ("interaction", InteractionStart(time_ms=make(1.0), entity_id=1)),
-            ("corpse", _corpse(2.0, "Dire Wolf", 1)),
+            ("source", src(2.0, "Dire Wolf")),
             ("target", TargetSighting(time_ms=make(3.8), name="Dire Wolf")),
             ("loot", loot(4.0, "Wolf Pelt")),
             ("bury", BuryEvent(time_ms=make(5.0))),
@@ -341,11 +339,10 @@ def test_chat_and_unity_same_second_reconcile_to_one_drop() -> None:
     drops = _run(
         c,
         [
-            ("interaction", InteractionStart(time_ms=make(0.0), entity_id=1)),
-            ("corpse", _corpse(1.0, "Rat", 1)),
+            ("source", src(1.0, "Rat")),
             ("loot", loot(2.0, "Good Armor Patch Kit")),
             ("loot", _unity(2.0, "ArmorPatchKit3", instance=-1719914656)),
-            ("corpse", _corpse(3.0, "Rat", 1)),
+            ("source", src(3.0, "Rat")),
         ],
     )
     assert len(drops) == 1
@@ -359,11 +356,10 @@ def test_chat_quantity_wins_when_pairing_stacks() -> None:
     drops = _run(
         c,
         [
-            ("interaction", InteractionStart(time_ms=make(0.0), entity_id=1)),
-            ("corpse", _corpse(1.0, "Hog", 1)),
+            ("source", src(1.0, "Hog")),
             ("loot", loot(2.0, "Basic Reservoir Arrow", 24)),
             ("loot", _unity(2.0, "ReservoirArrow2", instance=-1719915134)),
-            ("corpse", _corpse(3.0, "Hog", 1)),
+            ("source", src(3.0, "Hog")),
         ],
     )
     assert len(drops) == 1
@@ -375,10 +371,9 @@ def test_unity_only_pickup_infers_display_name() -> None:
     drops = _run(
         c,
         [
-            ("interaction", InteractionStart(time_ms=make(0.0), entity_id=1)),
-            ("corpse", _corpse(1.0, "Wolf", 1)),
+            ("source", src(1.0, "Wolf")),
             ("loot", _unity(2.0, "StrikingBell", instance=-1726463684)),
-            ("corpse", _corpse(3.0, "Wolf", 1)),
+            ("source", src(3.0, "Wolf")),
         ],
     )
     assert len(drops) == 1
@@ -420,10 +415,9 @@ def test_missed_loot_is_flagged_missed() -> None:
     drops = _run(
         c,
         [
-            ("interaction", InteractionStart(time_ms=make(0.0), entity_id=1)),
-            ("corpse", _corpse(1.0, "Rat", 1)),
+            ("source", src(1.0, "Rat")),
             ("loot", _unity(2.0, "Unknown", instance=-1, missed=True)),
-            ("corpse", _corpse(3.0, "Rat", 1)),
+            ("source", src(3.0, "Rat")),
         ],
     )
     assert len(drops) == 1
@@ -432,6 +426,17 @@ def test_missed_loot_is_flagged_missed() -> None:
 
 
 # --- corpse-description activity transitions (Unity Player.log) ----------------
+
+
+def _corpse(sec: float, monster: str, entity_id: int, extractions=None, reward_items=None) -> CorpseSearch:
+    return CorpseSearch(
+        time_ms=make(sec),
+        monster=monster,
+        entity_id=entity_id,
+        extractions=extractions or {},
+        reward_items=reward_items,
+    )
+
 
 def test_corpse_description_transition_marks_skinning() -> None:
     c = Correlator(activity_window_seconds=2.0)
@@ -553,10 +558,10 @@ def test_chat_activity_marker_labels_drop_linked_to_monster() -> None:
     drops = _run(
         c,
         [
-            ("interaction", InteractionStart(time_ms=make(0.0), entity_id=1)),
-            ("corpse", _corpse(1.0, "Boar", 1)),
+            ("source", src(1.0, "Boar")),
             ("loot", loot(3.0, "Pork")),
             ("activity", ActivityEvent(time_ms=make(4.0), activity="Butchering")),
+            ("source", src(5.0, "Boar")),
         ],
     )
     assert len(drops) == 1
@@ -583,11 +588,9 @@ def test_chat_activity_marker_outside_window_stays_looting() -> None:
     drops = _run(
         c,
         [
-            ("interaction", InteractionStart(time_ms=make(0.0), entity_id=1)),
-            ("corpse", _corpse(1.0, "Boar", 1)),
-            ("loot", loot(2.5, "Pork")),
-            ("corpse", _corpse(3.5, "Boar", 1)),
-            ("activity", ActivityEvent(time_ms=make(7.0), activity="Butchering")),
+            ("source", src(1.0, "Boar")),
+            ("loot", loot(10.0, "Pork")),
+            ("activity", ActivityEvent(time_ms=make(13.0), activity="Butchering")),
         ],
     )
     assert drops[0].activity == "Looting"
@@ -620,17 +623,9 @@ def _acts(events: list) -> list[str]:
     return [e.activity for e in events if type(e).__name__ == "EncounterActivity"]
 
 
-def test_corpse_search_roll_emits_begin_with_looting() -> None:
+def test_source_roll_emits_begin_with_looting() -> None:
     c = Correlator()
-    _run(
-        c,
-        [
-            ("interaction", InteractionStart(time_ms=make(1.0), entity_id=1)),
-            ("corpse", _corpse(1.0, "Rat", 1)),
-            ("loot", loot(2.0, "Bone")),
-            ("corpse", _corpse(3.0, "Rat", 1)),
-        ],
-    )
+    _run(c, [("source", src(1.0, "Rat")), ("loot", loot(2.0, "Bone")), ("source", src(3.0, "Rat"))])
     events = _events(c)
     begins = [e for e in events if type(e).__name__ == "EncounterBegin"]
     assert len(begins) == 1
@@ -644,10 +639,9 @@ def test_skin_transition_emits_skinning_activity() -> None:
     drops = _run(
         c,
         [
-            ("interaction", InteractionStart(time_ms=make(0.0), entity_id=1)),
-            ("corpse", _corpse(0.0, "Giant Bat", 1)),
+            ("source", src(0.0, "Giant Bat", skin=True)),
             ("loot", loot(0.5, "Bat Wing")),
-            ("corpse", _corpse(1.0, "Giant Bat", 1, {"skinned": "Bat Wing"})),
+            ("source", src(1.0, "Giant Bat", skin=False)),
         ],
     )
     events = _events(c)
@@ -663,10 +657,9 @@ def test_butcher_and_extract_transitions_emit_activities() -> None:
     _run(
         c,
         [
-            ("interaction", InteractionStart(time_ms=make(0.0), entity_id=1)),
-            ("corpse", _corpse(0.0, "Boar", 1)),
-            ("corpse", _corpse(1.0, "Boar", 1, {"butchered": "Pork"})),
-            ("corpse", _corpse(2.0, "Boar", 1, {"butchered": "Pork", "extracted": "Skull"})),
+            ("source", src(0.0, "Boar", butcher=True)),
+            ("source", src(1.0, "Boar", extract=True)),
+            ("source", src(2.0, "Boar")),
         ],
     )
     assert set(_acts(_events(c))) == {"Looting", "Butchering", "Extracting"}
@@ -675,14 +668,7 @@ def test_butcher_and_extract_transitions_emit_activities() -> None:
 
 def test_bury_emits_buried_and_end_on_same_encounter() -> None:
     c = Correlator()
-    _run(
-        c,
-        [
-            ("interaction", InteractionStart(time_ms=make(1.0), entity_id=1)),
-            ("corpse", _corpse(1.0, "Rat", 1)),
-            ("bury", BuryEvent(time_ms=make(2.0))),
-        ],
-    )
+    _run(c, [("source", src(1.0, "Rat")), ("bury", BuryEvent(time_ms=make(2.0)))])
     events = _events(c)
     assert _acts(events) == ["Looting", "Buried"]
     ends = [e for e in events if type(e).__name__ == "EncounterEnd"]
@@ -701,8 +687,7 @@ def test_chat_marker_emits_activity_bound_to_encounter() -> None:
     _run(
         c,
         [
-            ("interaction", InteractionStart(time_ms=make(1.0), entity_id=1)),
-            ("corpse", _corpse(1.0, "Boar", 1)),
+            ("source", src(1.0, "Boar")),
             ("loot", loot(3.0, "Pork")),
             ("activity", ActivityEvent(time_ms=make(4.0), activity="Butchering")),
         ],
@@ -724,19 +709,17 @@ def test_monster_change_ends_and_begins_encounters() -> None:
     _run(
         c,
         [
-            ("interaction", InteractionStart(time_ms=make(0.0), entity_id=1)),
-            ("corpse", _corpse(0.0, "Rat", 1)),
-            ("corpse", _corpse(5.0, "Rat", 1)),  # same corpse, same monster
-            ("interaction", InteractionStart(time_ms=make(5.5), entity_id=2)),
-            ("corpse", _corpse(6.0, "Wolf", 2)),  # monster change
+            ("source", src(0.0, "Rat")),
+            ("source", src(5.0, "Rat")),  # session timeout -> new encounter
+            ("source", src(6.0, "Wolf")),  # monster change
         ],
     )
     events = _events(c)
     begins = [e for e in events if type(e).__name__ == "EncounterBegin"]
     ends = [e for e in events if type(e).__name__ == "EncounterEnd"]
-    assert [b.monster for b in begins] == ["Rat", "Wolf"]
-    assert len(ends) == 1
-    assert [e.encounter_uuid for e in ends] == [begins[0].encounter_uuid]
+    assert [b.monster for b in begins] == ["Rat", "Rat", "Wolf"]
+    assert len(ends) == 2
+    assert [e.encounter_uuid for e in ends] == [begins[0].encounter_uuid, begins[1].encounter_uuid]
 
 
 def test_corpse_search_begin_and_new_verb_activities() -> None:

@@ -18,6 +18,15 @@ _INF = math.inf
 
 
 @dataclass(frozen=True)
+class SourceEvent:
+    time_ms: int
+    monster: str
+    can_skin: bool
+    can_butcher: bool
+    can_extract: bool
+
+
+@dataclass(frozen=True)
 class LootEvent:
     time_ms: int
     item: str
@@ -197,20 +206,24 @@ class Correlator:
 
     * ``buffer_seconds``: how recent a monster source (or target sighting) must be
       to explain a loot drop (10s in the legacy scripts).
+    * ``session_timeout``: max seconds between body-state packets to still count as
+      the same encounter (3s).
+    * ``retroactive_threshold``: max seconds a drop may precede a state-change packet
+      to be attributed to Skinning/Butchering/Extracting (0.9s).
     * ``activity_window_seconds``: how close to a corpse-description transition (or
-      chat activity marker) a drop must be to inherit its activity. The Unity log
-      stamps whole seconds, so a pickup and the description update that names the
-      action can be ~1s apart. Only a verb that *newly* appears on a previously-seen
-      corpse counts — a corpse that already shows skinned (someone else did it, or a
-      re-search) never relabels.
+      chat activity marker) a drop must be to inherit its activity. Grid is wider
+      than ``retroactive_threshold`` because the Unity log stamps whole seconds, so
+      a pickup and the description update that names the action can be ~1s apart.
+      Only a verb that *newly* appears on a previously-seen corpse counts — a corpse
+      that already shows skinned (someone else did it, or a re-search) never relabels.
     * ``target_fallback_seconds``: how stale a target sighting may be to compete with
       (or substitute for) a monster source. Looting targets the entity being looted,
       so fresh sightings are strong evidence; old ones are coincidence risk.
     * ``search_corroboration_seconds``: a target-linked drop within this many seconds
-      of a same-name corpse search is treated as corpse loot rather than a
-      harvestable (flowers/logs/apples have no corpse search).
+      of a same-name corpse-search packet is treated as corpse loot rather than a
+      harvestable (flowers/logs/apples have no corpse-search packet).
 
-    Unity ``Player.log`` events drive the mix: ``CorpseSearch`` names the corpse by
+    Unity ``Player.log`` events enrich the mix: ``CorpseSearch`` names the corpse by
     its entity id, ``InteractionStart`` opens the looting window, and loot facts from
     chat and the Unity log are reconciled per ``(canonical item, whole second)`` so
     the same reported pickup never double-counts.
@@ -219,22 +232,31 @@ class Correlator:
     def __init__(
         self,
         buffer_seconds: float = 10.0,
+        session_timeout: float = 3.0,
+        retroactive_threshold: float = 0.9,
         target_fallback_seconds: float = 3.0,
         search_corroboration_seconds: float = 2.0,
         activity_window_seconds: float = 2.0,
     ) -> None:
         self.buffer_seconds = buffer_seconds
+        self.session_timeout = session_timeout
+        self.retroactive_threshold = retroactive_threshold
         self.target_fallback_seconds = target_fallback_seconds
         self.search_corroboration_seconds = search_corroboration_seconds
         self.activity_window_seconds = activity_window_seconds
 
         self.pending: list[LootEvent] = []
         self.sightings: deque[TargetSighting] = deque()
+        self.sources: deque[SourceEvent] = deque()
         self.drops: list[LootDrop] = []
         self.encounter_events: list[EncounterBegin | EncounterActivity | EncounterEnd] = []
 
         self.current_encounter_uuid: str = str(uuid.uuid4())
         self.current_monster: str | None = None
+        self.last_packet_time: int | None = None
+        self.last_skin = False
+        self.last_butcher = False
+        self.last_extract = False
         self.current_zone = "Unknown"
 
         self.current_window_entity: int | None = None
@@ -248,9 +270,6 @@ class Correlator:
         self._corpse_extra: dict[int, tuple[dict[str, str], int]] = {}
         # (activity, time_ms) marked by a chat status line; applies to nearby drops.
         self._activity_hint: tuple[str, int] | None = None
-        # Corpse searches (time_ms, monster), most recent last. A same-name search
-        # near a target-linked drop marks that drop as corpse loot, not a harvestable.
-        self._search_history: deque[tuple[int, str]] = deque()
 
     # -- external event ingestion ------------------------------------------------
 
@@ -283,9 +302,45 @@ class Correlator:
         self._end_encounter(event.time_ms)
         self.current_encounter_uuid = str(uuid.uuid4())
         self.current_monster = None
+        self.last_packet_time = event.time_ms
+        self.last_skin = False
+        self.last_butcher = False
+        self.last_extract = False
         self._activity_hint = None
         if self.current_window_entity is not None:
             self._corpse_extra.pop(self.current_window_entity, None)
+
+    def ingest_source(self, event: SourceEvent) -> None:
+        time_since_last = (
+            _INF
+            if self.last_packet_time is None
+            else (event.time_ms - self.last_packet_time) / 1000.0
+        )
+
+        is_same_encounter = event.monster == self.current_monster and time_since_last <= self.session_timeout
+        just_skinned = is_same_encounter and self.last_skin and not event.can_skin
+        just_butchered = is_same_encounter and self.last_butcher and not event.can_butcher
+        just_extracted = is_same_encounter and self.last_extract and not event.can_extract
+
+        self._flush(event.time_ms, just_skinned, just_butchered, just_extracted)
+
+        self.sources.append(event)
+        self._prune_sources()
+
+        if not is_same_encounter:
+            self._end_encounter(event.time_ms)
+            self._begin_encounter(event.monster, event.time_ms)
+        if just_skinned:
+            self._note_activity("Skinning", event.time_ms)
+        elif just_butchered:
+            self._note_activity("Butchering", event.time_ms)
+        elif just_extracted:
+            self._note_activity("Extracting", event.time_ms)
+
+        self.last_skin = event.can_skin
+        self.last_butcher = event.can_butcher
+        self.last_extract = event.can_extract
+        self.last_packet_time = event.time_ms
 
     def ingest_interaction(self, event: InteractionStart) -> None:
         """A new corpse-looting window opens: flush any prior window's pending loot.
@@ -359,13 +414,12 @@ class Correlator:
                 just_extracted = True
         self.killer = event.killer
         self.participants = event.participants
-        self._search_history.append((event.time_ms, event.monster))
-        self._prune_search_history(event.time_ms)
         if self.current_monster != event.monster:
             self._end_encounter(event.time_ms)
             self._begin_encounter(event.monster, event.time_ms)
         else:
             self.current_monster = event.monster
+        self.last_packet_time = event.time_ms
         if just_skinned:
             self._note_activity("Skinning", event.time_ms)
         elif just_butchered:
@@ -377,6 +431,7 @@ class Correlator:
             just_skinned=just_skinned,
             just_butchered=just_butchered,
             just_extracted=just_extracted,
+            activity_window_s=self.activity_window_seconds,
             reward_tokens=reward_tokens,
         )
 
@@ -502,17 +557,21 @@ class Correlator:
         while self.sightings and self.sightings[0].time_ms < cutoff:
             self.sightings.popleft()
 
-    def _prune_search_history(self, now_ms: int) -> None:
-        cutoff = now_ms - int(self.search_corroboration_seconds * 1000)
-        while self._search_history and self._search_history[0][0] < cutoff:
-            self._search_history.popleft()
+    def _prune_sources(self) -> None:
+        if not self.pending:
+            return
+        oldest_drop = min(drop.time_ms for drop in self.pending)
+        window_ms = int(max(self.buffer_seconds, self.search_corroboration_seconds) * 1000)
+        cutoff = oldest_drop - window_ms
+        while self.sources and self.sources[0].time_ms < cutoff:
+            self.sources.popleft()
 
     def _corroborated_by_search(self, drop_time_ms: int, name: str) -> bool:
-        """Whether a same-name corpse search precedes the drop within the window."""
+        """Whether a same-name corpse-search packet precedes the drop within the window."""
         window_ms = int(self.search_corroboration_seconds * 1000)
-        for search_ms, monster in self._search_history:
-            lag = drop_time_ms - search_ms
-            if 0 <= lag <= window_ms and monster == name:
+        for source in self.sources:
+            lag = drop_time_ms - source.time_ms
+            if 0 <= lag <= window_ms and source.monster == name:
                 return True
         return False
 
@@ -540,8 +599,8 @@ class Correlator:
         so a fact whose entity maps to the current monster is corpse loot. A
         chat-only fact has no entity; it still counts when the open loot window
         is a corpse of the current monster and the pickup falls within the
-        corroboration window. Without any Unity corpse knowledge (chat-only
-        capture) proximity is the only signal, so the check passes.
+        corroboration window. Without any Unity corpse knowledge (chat/packet-
+        only capture) proximity is the only signal, so the check passes.
         """
         if fact.entity_id is not None:
             return self.entity_monsters.get(fact.entity_id) == self.current_monster
@@ -735,11 +794,14 @@ class Correlator:
         just_skinned: bool = False,
         just_butchered: bool = False,
         just_extracted: bool = False,
+        activity_window_s: float | None = None,
         reward_tokens: set[str] | None = None,
     ) -> None:
-        # Corpse-description transitions carry whole-second Player.log stamps,
-        # so a pickup and the action that labels it can be ~1s apart.
-        window_s = self.activity_window_seconds
+        # Packet can_skin/butcher/extract transitions keep the legacy 0.9s retro
+        # window; corpse-description transitions (whole-second Player.log stamps)
+        # use the wider activity window.
+        window_s = self.retroactive_threshold if activity_window_s is None else activity_window_s
+        self._prune_sources()
         for fact in self._reconcile(self.pending):
             if self.current_monster is not None and ref_time_ms is not None:
                 monster_lag = (ref_time_ms - fact.time_ms) / 1000.0

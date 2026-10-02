@@ -19,19 +19,20 @@ def test_write_updates_preserves_comments_and_sibling_keys(tmp_path: Path, monke
         "# annotated sample keep me\n"
         "[db]\n"
         "path = 'data/gorgon.db'\n"
-        "[chat]\n"
-        "poll_interval_s = 1.0   # comment on poll_interval_s\n"
+        "[capture]\n"
+        "interface = 'auto'   # comment on interface\n"
+        "bpf = ''\n"
     )
 
-    cfg = write_updates({"chat.poll_interval_s": 2.0, "db.path": "var/data.db"}, str(config_file))
+    cfg = write_updates({"capture.interface": "eth0", "db.path": "var/data.db"}, str(config_file))
 
-    assert cfg.chat.poll_interval_s == 2.0
+    assert cfg.capture.interface == "eth0"
     assert cfg.db.path == str((tmp_path / "var/data.db").resolve())
 
     text = config_file.read_text()
     assert "# annotated sample keep me" in text
-    assert "   # comment on poll_interval_s" in text
-    assert text.count("poll_interval_s =") == 1  # single key updated, no duplication
+    assert "   # comment on interface" in text
+    assert text.count("interface =") == 1  # single key updated, no duplication
 
 
 def test_write_updates_nested_dict_and_creates_missing_section(tmp_path: Path) -> None:
@@ -66,7 +67,7 @@ def test_active_config_path_creates_default_when_none(tmp_path: Path, monkeypatc
 
 def test_apply_and_validate_preserve_unrelated_keys(tmp_path: Path) -> None:
     doc = read_document(tmp_path / "absent.toml")
-    apply_updates(doc, {"chat.poll_interval_s": 2.0})
+    apply_updates(doc, {"capture.interface": "eth0"})
     cfg = validate_document(doc)
-    assert cfg.chat.poll_interval_s == 2.0
+    assert cfg.capture.interface == "eth0"
     assert cfg.ocr.zones.region == [1680, 0, 180, 50]  # default preserved
